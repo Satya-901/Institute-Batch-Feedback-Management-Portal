@@ -1,0 +1,6 @@
+{
+  "name": "EduPulse - Institute & Batch Feedback Management Portal",
+  "description": "Comprehensive institute management system for classes, batches, teachers, bulk student enrolment, custom rating feedback forms, and real-time response analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

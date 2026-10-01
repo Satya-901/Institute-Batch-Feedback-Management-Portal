@@ -1,0 +1,69 @@
+@import "tailwindcss";
+@import "sweetalert2/dist/sweetalert2.min.css";
+@import "notyf/notyf.min.css";
+
+/* CSS Background Patterns inspired by modern institutional portals (no purple/neon slop) */
+.bg-grid-pattern {
+  background-color: #f8fafc;
+  background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.bg-dot-pattern-dark {
+  background-color: #0f172a;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+.bg-blueprint {
+  background-color: #0b1528;
+  background-image: 
+    linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* Custom scrollbars for clean dashboards */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Notyf adjustments */
+.notyf__toast {
+  border-radius: 8px !important;
+  font-family: inherit !important;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05) !important;
+}
+
+/* SweetAlert2 theme harmonization */
+.swal2-popup {
+  border-radius: 12px !important;
+  font-family: inherit !important;
+  border: 1px solid #e2e8f0 !important;
+}
+
+.swal2-confirm {
+  background-color: #0f766e !important; /* Teal-700 / Slate theme instead of purple */
+  box-shadow: none !important;
+  border-radius: 6px !important;
+}
+
+.swal2-cancel {
+  background-color: #64748b !important;
+  box-shadow: none !important;
+  border-radius: 6px !important;
+}
