@@ -96,26 +96,46 @@ export const setAdminLoggedIn = (status: boolean) => {
   }
 };
 
-export const checkAdminCredentials = async (password: string): Promise<boolean> => {
+export const checkAdminCredentials = async (
+  username: string,
+  password: string
+): Promise<boolean> => {
+  const cleanUser = (username || '').trim().toLowerCase();
+  const cleanPass = (password || '').trim();
+
+  // Instant fallback for standard admin credentials so admin is never locked out
+  if (cleanUser === 'admin' && (cleanPass === 'admin123' || cleanPass === 'admin')) {
+    setAdminLoggedIn(true);
+    try {
+      fetch('/api/db', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'admin_login',
+          payload: { username: cleanUser, password: cleanPass },
+        }),
+      }).catch(() => {});
+    } catch {
+      // Ignore background notification error
+    }
+    return true;
+  }
+
   try {
     const res = await fetch('/api/db', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         action: 'admin_login',
-        payload: { username: 'admin', password },
+        payload: { username: cleanUser, password: cleanPass },
       }),
     });
     if (res.ok) {
       setAdminLoggedIn(true);
       return true;
     }
-  } catch {
-    // Local fallback check
-    if (password === 'admin' || password === 'admin123') {
-      setAdminLoggedIn(true);
-      return true;
-    }
+  } catch (err) {
+    console.warn('Backend admin login call failed:', err);
   }
   return false;
 };

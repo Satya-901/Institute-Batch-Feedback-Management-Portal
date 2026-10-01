@@ -22,10 +22,10 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onLoginSuccess }) => {
     }
 
     setLoading(true);
-    const valid = await checkAdminCredentials(password.trim());
+    const valid = await checkAdminCredentials(username.trim(), password.trim());
     setLoading(false);
 
-    if (valid && username.trim().toLowerCase() === 'admin') {
+    if (valid) {
       toastSuccess('Welcome to Admin Portal');
       onLoginSuccess();
     } else {
