@@ -137,6 +137,36 @@ function initSchema(db: Database) {
     // Column already exists
   }
 
+  try {
+    db.run("ALTER TABLE feedback_forms ADD COLUMN classId TEXT");
+  } catch {
+    // Column already exists
+  }
+
+  try {
+    db.run("ALTER TABLE feedback_responses ADD COLUMN classId TEXT");
+  } catch {
+    // Column already exists
+  }
+
+  try {
+    db.run("ALTER TABLE feedback_responses ADD COLUMN totalScore REAL");
+  } catch {
+    // Column already exists
+  }
+
+  try {
+    db.run("ALTER TABLE feedback_responses ADD COLUMN maxPossibleScore REAL");
+  } catch {
+    // Column already exists
+  }
+
+  try {
+    db.run("ALTER TABLE feedback_responses ADD COLUMN scorePercentage REAL");
+  } catch {
+    // Column already exists
+  }
+
   // Default admin login if not exists (username: admin, password: admin)
   const res = db.exec("SELECT username FROM admin_user WHERE username = 'admin'");
   if (!res.length || !res[0].values.length) {

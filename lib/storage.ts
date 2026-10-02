@@ -202,6 +202,64 @@ export const deleteTeacher = (id: string) => {
   callSqlite('delete_teacher', { id });
 };
 
+export const bulkAddTeachers = (
+  newTeachers: TeacherItem[]
+): { addedCount: number; duplicateCount: number } => {
+  const current = getTeachers();
+  const existingIds = new Set(
+    current.map((t) => (t.employeeId ? t.employeeId.trim().toUpperCase() : t.name.trim().toUpperCase()))
+  );
+  const validToAdd: TeacherItem[] = [];
+  let duplicates = 0;
+
+  for (const t of newTeachers) {
+    const key = (t.employeeId ? t.employeeId.trim().toUpperCase() : t.name.trim().toUpperCase());
+    if (existingIds.has(key)) {
+      duplicates++;
+    } else {
+      existingIds.add(key);
+      validToAdd.push(t);
+    }
+  }
+
+  if (validToAdd.length > 0) {
+    const updated = [...validToAdd, ...current];
+    setParsed(STORAGE_KEYS.TEACHERS, updated);
+    callSqlite('bulk_add_teachers', { teachers: validToAdd });
+  }
+
+  return { addedCount: validToAdd.length, duplicateCount: duplicates };
+};
+
+// Saved student local profile (so on next teacher evaluation student doesn't re-enter info)
+const STUDENT_LOCAL_PROFILE_KEY = 'edupulse_saved_student_profile';
+
+export interface SavedStudentProfile {
+  studentId: string;
+  name: string;
+  classId: string;
+  batchId: string;
+}
+
+export const getSavedStudentProfile = (): SavedStudentProfile | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const val = localStorage.getItem(STUDENT_LOCAL_PROFILE_KEY);
+    return val ? JSON.parse(val) : null;
+  } catch {
+    return null;
+  }
+};
+
+export const setSavedStudentProfile = (profile: SavedStudentProfile): void => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(STUDENT_LOCAL_PROFILE_KEY, JSON.stringify(profile));
+  } catch {
+    // Ignore error
+  }
+};
+
 // Students (NO DUMMY DATA: starts empty [])
 export const getStudents = (): StudentItem[] => getParsed<StudentItem[]>(STORAGE_KEYS.STUDENTS, []);
 export const saveStudent = (student: StudentItem) => {
@@ -348,7 +406,7 @@ export const submitFeedbackResponse = (
   const list = getResponses();
   list.unshift(newResponse);
   setParsed(STORAGE_KEYS.RESPONSES, list);
-  callSqlite('submit_response', response);
+  callSqlite('submit_response', newResponse);
 
   return {
     success: true,

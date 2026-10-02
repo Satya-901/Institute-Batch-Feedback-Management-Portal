@@ -6,13 +6,15 @@ import {
   Download,
   Printer,
   Filter,
-  CheckCircle2,
   Users,
-  Star,
-  Layers,
-  MessageSquare,
-  FileSpreadsheet,
   Award,
+  Calendar,
+  CheckCircle2,
+  TrendingUp,
+  FileSpreadsheet,
+  MessageSquare,
+  Sparkles,
+  School,
   ChevronDown,
 } from 'lucide-react';
 import {
@@ -42,426 +44,572 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
   teachers,
   students,
 }) => {
-  const [selectedFormId, setSelectedFormId] = useState<string>(forms[0]?.id || '');
-  const [selectedBatchFilter, setSelectedBatchFilter] = useState<string>('all');
+  const [selectedFormId, setSelectedFormId] = useState<string>(forms[0]?.id || 'all');
+  const [selectedTeacherFilter, setSelectedTeacherFilter] = useState<string>('all');
+  const [selectedClassFilter, setSelectedClassFilter] = useState<string>('all');
 
-  // Active selected form
+  // Filtered responses based on Form, Teacher, and Class
+  const filteredResponses = useMemo(() => {
+    return responses.filter((r) => {
+      if (selectedFormId !== 'all' && r.formId !== selectedFormId) return false;
+      if (selectedTeacherFilter !== 'all' && r.teacherId !== selectedTeacherFilter) return false;
+      if (selectedClassFilter !== 'all' && r.classId && r.classId !== selectedClassFilter) {
+        return false;
+      }
+      return true;
+    });
+  }, [responses, selectedFormId, selectedTeacherFilter, selectedClassFilter]);
+
+  // Active form object if specific form selected
   const activeForm = useMemo(() => {
-    return forms.find((f) => f.id === selectedFormId) || forms[0];
+    if (selectedFormId === 'all') return forms[0] || null;
+    return forms.find((f) => f.id === selectedFormId) || forms[0] || null;
   }, [forms, selectedFormId]);
 
-  // Responses for the selected form
-  const formResponses = useMemo(() => {
-    if (!activeForm) return [];
-    return responses.filter((r) => r.formId === activeForm.id);
-  }, [responses, activeForm]);
+  // Metrics computation for each teacher
+  const teacherStats = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        teacher: TeacherItem;
+        responsesCount: number;
+        totalScore: number;
+        maxScore: number;
+        studentScores: {
+          studentId: string;
+          studentName: string;
+          score: number;
+          maxScore: number;
+          percentage: number;
+          submittedAt: string;
+        }[];
+      }
+    >();
 
-  // Batch & Class details for the active form
-  const formBatch = useMemo(() => {
-    if (!activeForm) return null;
-    return batches.find((b) => b.id === activeForm.batchId);
-  }, [batches, activeForm]);
+    // Initialize all teachers
+    teachers.forEach((t) => {
+      map.set(t.id, {
+        teacher: t,
+        responsesCount: 0,
+        totalScore: 0,
+        maxScore: 0,
+        studentScores: [],
+      });
+    });
 
-  const formClass = useMemo(() => {
-    if (!formBatch) return null;
-    return classes.find((c) => c.id === formBatch.classId);
-  }, [classes, formBatch]);
+    // Populate from responses
+    filteredResponses.forEach((r) => {
+      if (!r.teacherId) return;
+      const stat = map.get(r.teacherId);
+      if (stat) {
+        // Calculate scores from response or dynamically from activeForm
+        let respScore = Number(r.totalScore) || 0;
+        let respMax = Number(r.maxPossibleScore) || 0;
 
-  const formTeacher = useMemo(() => {
-    if (!activeForm || !activeForm.teacherId) return null;
-    return teachers.find((t) => t.id === activeForm.teacherId);
-  }, [teachers, activeForm]);
-
-  const batchStudents = useMemo(() => {
-    if (!formBatch) return [];
-    return students.filter((s) => s.batchId === formBatch.id);
-  }, [students, formBatch]);
-
-  // Compute Metrics for this form
-  const metrics = useMemo(() => {
-    if (!activeForm || formResponses.length === 0) {
-      return {
-        avgRating: 0,
-        responseRate: 0,
-        totalResponses: 0,
-        positivePercent: 0,
-      };
-    }
-
-    let totalRatingPoints = 0;
-    let totalMaxPoints = 0;
-    let positiveCount = 0;
-    let ratingQuestionCount = 0;
-
-    activeForm.questions.forEach((q) => {
-      if (q.type === 'rating') {
-        const scaleMax = q.scaleMax || 5;
-        formResponses.forEach((resp) => {
-          const val = Number(resp.answers[q.id]);
-          if (!isNaN(val)) {
-            totalRatingPoints += val;
-            totalMaxPoints += scaleMax;
-            ratingQuestionCount++;
-            if (val >= scaleMax * 0.7) {
-              positiveCount++;
+        // Fallback calculation if not stored
+        if (respMax === 0 && activeForm) {
+          activeForm.questions.forEach((q) => {
+            if (q.type === 'multiple_choice' && q.options) {
+              const maxQ = Math.max(...q.options.map((o) => o.score || 0), 0);
+              respMax += maxQ;
+              const chosen = q.options.find(
+                (o) => o.text === r.answers[q.id] || o.id === r.answers[q.id]
+              );
+              if (chosen) respScore += Number(chosen.score) || 0;
             }
-          }
+          });
+        }
+
+        const percentage = respMax > 0 ? Number(((respScore / respMax) * 100).toFixed(1)) : 0;
+
+        stat.responsesCount += 1;
+        stat.totalScore += respScore;
+        stat.maxScore += respMax;
+        stat.studentScores.push({
+          studentId: r.studentId,
+          studentName: r.studentName,
+          score: respScore,
+          maxScore: respMax,
+          percentage,
+          submittedAt: r.submittedAt,
         });
       }
     });
 
-    const normalizedAvg =
-      totalMaxPoints > 0 ? ((totalRatingPoints / totalMaxPoints) * 5).toFixed(1) : 'N/A';
-    const responseRate =
-      batchStudents.length > 0
-        ? Math.round((formResponses.length / batchStudents.length) * 100)
-        : 0;
-    const positivePercent =
-      ratingQuestionCount > 0 ? Math.round((positiveCount / ratingQuestionCount) * 100) : 0;
+    return Array.from(map.values()).filter((s) => s.responsesCount > 0 || selectedTeacherFilter === 'all');
+  }, [teachers, filteredResponses, activeForm, selectedTeacherFilter]);
+
+  // Overall metrics across all filtered responses
+  const overallMetrics = useMemo(() => {
+    let grandTotalScore = 0;
+    let grandMaxScore = 0;
+
+    filteredResponses.forEach((r) => {
+      let s = Number(r.totalScore) || 0;
+      let m = Number(r.maxPossibleScore) || 0;
+
+      if (m === 0 && activeForm) {
+        activeForm.questions.forEach((q) => {
+          if (q.type === 'multiple_choice' && q.options) {
+            m += Math.max(...q.options.map((o) => o.score || 0), 0);
+            const chosen = q.options.find(
+              (o) => o.text === r.answers[q.id] || o.id === r.answers[q.id]
+            );
+            if (chosen) s += Number(chosen.score) || 0;
+          }
+        });
+      }
+
+      grandTotalScore += s;
+      grandMaxScore += m;
+    });
+
+    const averagePercentage =
+      grandMaxScore > 0 ? Number(((grandTotalScore / grandMaxScore) * 100).toFixed(1)) : 0;
+
+    const evaluatedTeachersCount = new Set(
+      filteredResponses.map((r) => r.teacherId).filter(Boolean)
+    ).size;
 
     return {
-      avgRating: normalizedAvg,
-      responseRate,
-      totalResponses: formResponses.length,
-      positivePercent,
+      totalSubmissions: filteredResponses.length,
+      grandTotalScore,
+      grandMaxScore,
+      averagePercentage,
+      evaluatedTeachersCount,
     };
-  }, [activeForm, formResponses, batchStudents]);
+  }, [filteredResponses, activeForm]);
 
-  // Export report as CSV
+  // Export to CSV
   const handleExportCSV = () => {
-    if (!activeForm || formResponses.length === 0) {
-      toastSuccess('No data available to export');
+    if (filteredResponses.length === 0) {
+      toastSuccess('No responses to export');
       return;
     }
 
-    const headers = ['Student ID', 'Student Name', 'Submitted At'];
-    activeForm.questions.forEach((q) => {
-      headers.push(`"${q.text.replace(/"/g, '""')}"`);
-    });
+    const headers = [
+      'Submission ID',
+      'Student ID',
+      'Student Name',
+      'Class',
+      'Batch',
+      'Teacher Name',
+      'Marks Obtained',
+      'Max Marks',
+      'Percentage (%)',
+      'Date & Time',
+    ];
 
-    const rows = formResponses.map((r) => {
-      const row = [
+    const rows = filteredResponses.map((r) => {
+      const cls = classes.find((c) => c.id === r.classId);
+      const bch = batches.find((b) => b.id === r.batchId);
+      const tch = teachers.find((t) => t.id === r.teacherId);
+      const score = Number(r.totalScore) || 0;
+      const maxScore = Number(r.maxPossibleScore) || 0;
+      const pct = maxScore > 0 ? ((score / maxScore) * 100).toFixed(1) : '0';
+
+      return [
+        r.id,
         r.studentId,
         `"${r.studentName}"`,
-        new Date(r.submittedAt).toLocaleDateString(),
+        `"${cls?.name || 'Class'}"`,
+        `"${bch?.name || 'Batch'}"`,
+        `"${tch?.name || 'Faculty'}"`,
+        score,
+        maxScore,
+        `${pct}%`,
+        `"${new Date(r.submittedAt).toLocaleString()}"`,
       ];
-      activeForm.questions.forEach((q) => {
-        const ans = r.answers[q.id] !== undefined ? String(r.answers[q.id]) : '';
-        row.push(`"${ans.replace(/"/g, '""')}"`);
-      });
-      return row.join(',');
     });
 
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows].join('\n');
+    const csvContent =
+      'data:text/csv;charset=utf-8,' +
+      [headers.join(','), ...rows.map((row) => row.join(','))].join('\n');
+
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
     link.setAttribute(
       'download',
-      `Feedback_Report_${activeForm.shareableCode}_${new Date().toISOString().split('T')[0]}.csv`
+      `EduPulse_Faculty_Evaluation_Report_${new Date().toISOString().slice(0, 10)}.csv`
     );
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-
-    toastSuccess('Feedback report CSV downloaded');
+    toastSuccess('Evaluation CSV report downloaded');
   };
 
   const handlePrint = () => {
-    if (typeof window !== 'undefined') {
-      window.print();
-    }
+    window.print();
   };
-
-  if (forms.length === 0) {
-    return (
-      <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
-        <BarChart3 className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-        <p className="text-sm font-semibold text-slate-700">No feedback forms generated yet</p>
-        <p className="text-xs text-slate-500 mt-1">
-          Create feedback forms and collect student responses to view comprehensive reports.
-        </p>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6">
-      {/* Top Controls Bar */}
+      {/* Header and Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-200 gap-3">
         <div>
-          <h2 className="text-lg font-bold text-slate-900">Feedback Analytics & Reports</h2>
+          <h2 className="text-lg font-bold text-slate-900">Faculty Evaluation & Scoring Reports</h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Response breakdowns and verified student submission logs.
+            Marks scored by each teacher, student-wise marks distribution, and average percentage.
           </p>
         </div>
 
-        <div className="flex items-center space-x-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Form Selector */}
+          <div className="flex items-center space-x-1.5">
+            <Filter className="w-3.5 h-3.5 text-slate-400" />
+            <select
+              value={selectedFormId}
+              onChange={(e) => setSelectedFormId(e.target.value)}
+              className="text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 font-medium"
+            >
+              <option value="all">All Feedback Forms ({forms.length})</option>
+              {forms.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.title}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Teacher Filter */}
+          <select
+            value={selectedTeacherFilter}
+            onChange={(e) => setSelectedTeacherFilter(e.target.value)}
+            className="text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 font-medium"
+          >
+            <option value="all">All Faculty Members ({teachers.length})</option>
+            {teachers.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+
+          {/* Export & Print */}
           <button
             onClick={handleExportCSV}
-            disabled={formResponses.length === 0}
-            className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 disabled:opacity-50 text-slate-700 text-xs font-semibold border border-slate-300 shadow-xs transition-colors"
+            className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold shadow-xs"
           >
-            <Download className="w-3.5 h-3.5 text-teal-600" />
+            <Download className="w-3.5 h-3.5" />
             <span>Export CSV</span>
           </button>
           <button
             onClick={handlePrint}
-            className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold shadow-xs transition-colors"
+            className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold"
           >
             <Printer className="w-3.5 h-3.5" />
-            <span>Print Report</span>
+            <span>Print</span>
           </button>
         </div>
       </div>
 
-      {/* Form Selector Dropdown Card */}
-      <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex-1">
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Select Evaluation Form to Analyze:
-            </label>
-            <select
-              value={selectedFormId}
-              onChange={(e) => setSelectedFormId(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-teal-500 bg-white font-medium text-slate-900"
-            >
-              {forms.map((f) => {
-                const b = batches.find((item) => item.id === f.batchId);
-                const respCount = responses.filter((r) => r.formId === f.id).length;
-                return (
-                  <option key={f.id} value={f.id}>
-                    {f.title} — ({b?.name || 'Batch'} • {respCount} Submissions)
-                  </option>
-                );
-              })}
-            </select>
+      {/* KPI Summary Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+        {/* Total Marks Awarded */}
+        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500">Total Marks Scored</span>
+            <span className="p-1.5 rounded-lg bg-teal-50 text-teal-600">
+              <Award className="w-4 h-4" />
+            </span>
           </div>
+          <div className="mt-2 flex items-baseline space-x-2">
+            <span className="text-2xl font-bold text-slate-900">{overallMetrics.grandTotalScore}</span>
+            <span className="text-xs text-slate-400 font-mono">/ {overallMetrics.grandMaxScore}</span>
+          </div>
+          <p className="text-[11px] text-slate-500 mt-1">Aggregated across all questions</p>
+        </div>
 
-          {activeForm && (
-            <div className="bg-slate-50 rounded-lg p-3 border border-slate-200 text-xs text-slate-600 flex flex-wrap gap-x-4 gap-y-1">
-              <div>
-                <span className="text-slate-400">Batch:</span>{' '}
-                <strong className="text-slate-800">{formBatch?.name}</strong>
-              </div>
-              {formClass && (
-                <div>
-                  <span className="text-slate-400">Class:</span>{' '}
-                  <strong className="text-slate-800">{formClass.name}</strong>
-                </div>
-              )}
-              {formTeacher && (
-                <div>
-                  <span className="text-slate-400">Faculty:</span>{' '}
-                  <strong className="text-slate-800">{formTeacher.name}</strong>
-                </div>
-              )}
-              <div>
-                <span className="text-slate-400">Code:</span>{' '}
-                <span className="font-mono text-teal-700 font-bold">
-                  {activeForm.shareableCode}
-                </span>
-              </div>
-            </div>
-          )}
+        {/* Overall Average % */}
+        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500">Average Percentage</span>
+            <span className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600">
+              <TrendingUp className="w-4 h-4" />
+            </span>
+          </div>
+          <div className="mt-2 flex items-baseline space-x-2">
+            <span className="text-2xl font-bold text-emerald-700">
+              {overallMetrics.averagePercentage}%
+            </span>
+          </div>
+          <p className="text-[11px] text-slate-500 mt-1">Institute faculty benchmark</p>
+        </div>
+
+        {/* Total Student Submissions */}
+        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500">Student Responses</span>
+            <span className="p-1.5 rounded-lg bg-blue-50 text-blue-600">
+              <Users className="w-4 h-4" />
+            </span>
+          </div>
+          <div className="mt-2 flex items-baseline space-x-2">
+            <span className="text-2xl font-bold text-slate-900">{overallMetrics.totalSubmissions}</span>
+          </div>
+          <p className="text-[11px] text-slate-500 mt-1">Unique faculty evaluations recorded</p>
+        </div>
+
+        {/* Evaluated Teachers */}
+        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500">Faculty Evaluated</span>
+            <span className="p-1.5 rounded-lg bg-purple-50 text-purple-600">
+              <School className="w-4 h-4" />
+            </span>
+          </div>
+          <div className="mt-2 flex items-baseline space-x-2">
+            <span className="text-2xl font-bold text-slate-900">{overallMetrics.evaluatedTeachersCount}</span>
+            <span className="text-xs text-slate-400 font-mono">/ {teachers.length}</span>
+          </div>
+          <p className="text-[11px] text-slate-500 mt-1">Teachers with student feedback</p>
         </div>
       </div>
 
-      {/* KPI Highlights */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
-          <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">
-            Normalized Rating
-          </span>
-          <div className="mt-2 flex items-baseline space-x-1.5">
-            <span className="text-3xl font-bold text-teal-700">{metrics.avgRating}</span>
-            <span className="text-xs text-slate-400 font-medium">/ 5.0</span>
+      {/* Teacher-Wise Scoring Leaderboard & Summary */}
+      <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs space-y-4">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+          <div>
+            <h3 className="font-bold text-slate-900 text-sm">Faculty Score Summary</h3>
+            <p className="text-xs text-slate-500">
+              Marks scored by each teacher (total marks, max marks, and average percentage).
+            </p>
           </div>
-          <p className="text-xs text-slate-500 mt-1 flex items-center space-x-1">
-            <Star className="w-3 h-3 text-amber-500 fill-amber-500" />
-            <span>Overall satisfaction score</span>
-          </p>
-        </div>
-
-        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
-          <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">
-            Turnout Rate
+          <span className="text-xs font-mono text-slate-400 bg-slate-100 px-2 py-0.5 rounded">
+            {teacherStats.length} Faculty
           </span>
-          <div className="mt-2 flex items-baseline space-x-1.5">
-            <span className="text-3xl font-bold text-slate-900">{metrics.responseRate}%</span>
-          </div>
-          <p className="text-xs text-slate-500 mt-1">
-            {metrics.totalResponses} of {batchStudents.length} batch students
-          </p>
         </div>
 
-        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
-          <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">
-            Total Responses
-          </span>
-          <div className="mt-2 flex items-baseline space-x-1.5">
-            <span className="text-3xl font-bold text-slate-900">{metrics.totalResponses}</span>
-            <span className="text-xs text-emerald-700 font-medium">Verified</span>
-          </div>
-          <p className="text-xs text-slate-500 mt-1">100% unique submissions</p>
-        </div>
-
-        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
-          <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">
-            Positive Sentiment
-          </span>
-          <div className="mt-2 flex items-baseline space-x-1.5">
-            <span className="text-3xl font-bold text-emerald-700">{metrics.positivePercent}%</span>
-          </div>
-          <p className="text-xs text-slate-500 mt-1">Ratings at or above 70%</p>
-        </div>
-      </div>
-
-      {/* Question-By-Question Detailed Breakdown */}
-      <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs space-y-6">
-        <div>
-          <h3 className="text-base font-bold text-slate-900">
-            Question-by-Question Response Distribution
-          </h3>
-          <p className="text-xs text-slate-500">
-            Detailed breakdown based on custom question types and configured scales.
-          </p>
-        </div>
-
-        {formResponses.length === 0 ? (
-          <div className="py-8 text-center text-slate-400 text-xs bg-slate-50 rounded-xl border border-dashed border-slate-200">
-            No responses recorded for this feedback form yet. Share the feedback link to receive data.
+        {teacherStats.length === 0 ? (
+          <div className="py-8 text-center text-xs text-slate-400">
+            No evaluations recorded yet. Share feedback links or QR codes with students.
           </div>
         ) : (
-          <div className="space-y-6">
-            {activeForm?.questions.map((q, idx) => {
-              if (q.type === 'rating') {
-                const scaleMax = q.scaleMax || 5;
-                const scores = formResponses
-                  .map((r) => Number(r.answers[q.id]))
-                  .filter((v) => !isNaN(v));
-                const sum = scores.reduce((acc, curr) => acc + curr, 0);
-                const avg = scores.length > 0 ? (sum / scores.length).toFixed(1) : '0';
-                const percentage =
-                  scores.length > 0 ? Math.round((Number(avg) / scaleMax) * 100) : 0;
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+            {teacherStats.map(({ teacher, responsesCount, totalScore, maxScore }) => {
+              const pct = maxScore > 0 ? Number(((totalScore / maxScore) * 100).toFixed(1)) : 0;
+              const avgMarksPerStudent =
+                responsesCount > 0 ? (totalScore / responsesCount).toFixed(1) : '0';
+              const maxMarksPerStudent =
+                responsesCount > 0 ? (maxScore / responsesCount).toFixed(1) : '0';
 
-                // Distribution map
-                const distMap: Record<number, number> = {};
-                for (let i = 1; i <= scaleMax; i++) distMap[i] = 0;
-                scores.forEach((s) => {
-                  distMap[s] = (distMap[s] || 0) + 1;
+              const badgeColor =
+                pct >= 85
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                  : pct >= 70
+                  ? 'bg-blue-50 text-blue-800 border-blue-300'
+                  : pct >= 50
+                  ? 'bg-amber-50 text-amber-800 border-amber-300'
+                  : 'bg-red-50 text-red-800 border-red-300';
+
+              return (
+                <div
+                  key={teacher.id}
+                  className="p-4 rounded-xl border border-slate-200 bg-slate-50/60 hover:bg-slate-50 transition-colors flex flex-col justify-between"
+                >
+                  <div>
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <h4 className="font-bold text-slate-900 text-sm">{teacher.name}</h4>
+                        <p className="text-[11px] text-slate-500">
+                          {teacher.subjectSpecialization.join(', ') || 'Faculty'}
+                        </p>
+                      </div>
+
+                      <span className={`text-xs px-2.5 py-0.5 rounded-full font-bold border ${badgeColor}`}>
+                        {pct}%
+                      </span>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                      <div className="bg-white p-2 rounded-lg border border-slate-200">
+                        <span className="text-[10px] text-slate-400 block uppercase font-bold">
+                          Total Marks
+                        </span>
+                        <span className="font-bold text-slate-900 text-sm">
+                          {totalScore} <span className="text-xs text-slate-400 font-normal">/ {maxScore}</span>
+                        </span>
+                      </div>
+
+                      <div className="bg-white p-2 rounded-lg border border-slate-200">
+                        <span className="text-[10px] text-slate-400 block uppercase font-bold">
+                          Avg per Student
+                        </span>
+                        <span className="font-bold text-teal-800 text-sm">
+                          {avgMarksPerStudent} <span className="text-xs text-slate-400 font-normal">/ {maxMarksPerStudent}</span>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 pt-2.5 border-t border-slate-200 flex items-center justify-between text-[11px] text-slate-500">
+                    <span>Evaluated by: <strong className="text-slate-700">{responsesCount} students</strong></span>
+                    <button
+                      onClick={() => setSelectedTeacherFilter(teacher.id)}
+                      className="text-teal-700 hover:underline font-semibold"
+                    >
+                      View Submissions →
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Per-Student Evaluation Responses Table */}
+      <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs space-y-4">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+          <div>
+            <h3 className="font-bold text-slate-900 text-sm">
+              Student Submissions & Score Breakdown
+            </h3>
+            <p className="text-xs text-slate-500">
+              Details of which student gave how many marks to which faculty member.
+            </p>
+          </div>
+          <span className="text-xs font-mono text-slate-500">
+            {filteredResponses.length} records
+          </span>
+        </div>
+
+        {filteredResponses.length === 0 ? (
+          <div className="py-8 text-center text-xs text-slate-400">
+            No responses matching the current filter.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs text-left">
+              <thead className="bg-slate-50 text-slate-700 uppercase font-semibold text-[10px] tracking-wider border-b border-slate-200">
+                <tr>
+                  <th className="px-3 py-2.5">Student ID</th>
+                  <th className="px-3 py-2.5">Student Name</th>
+                  <th className="px-3 py-2.5">Faculty Evaluated</th>
+                  <th className="px-3 py-2.5 text-center">Marks Given</th>
+                  <th className="px-3 py-2.5 text-center">Score %</th>
+                  <th className="px-3 py-2.5">Submitted At</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredResponses.map((r) => {
+                  const teacher = teachers.find((t) => t.id === r.teacherId);
+                  const score = Number(r.totalScore) || 0;
+                  const maxScore = Number(r.maxPossibleScore) || 0;
+                  const pct = maxScore > 0 ? Number(((score / maxScore) * 100).toFixed(1)) : 0;
+
+                  return (
+                    <tr key={r.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="px-3 py-2.5 font-mono font-bold text-teal-800 uppercase">
+                        {r.studentId}
+                      </td>
+                      <td className="px-3 py-2.5 font-semibold text-slate-800">{r.studentName}</td>
+                      <td className="px-3 py-2.5 font-medium text-slate-700">
+                        {teacher?.name || 'General Faculty'}
+                      </td>
+                      <td className="px-3 py-2.5 text-center font-bold text-slate-900">
+                        {score} <span className="text-slate-400 font-normal">/ {maxScore}</span>
+                      </td>
+                      <td className="px-3 py-2.5 text-center">
+                        <span
+                          className={`inline-block px-2 py-0.5 rounded-full font-bold text-[10px] ${
+                            pct >= 85
+                              ? 'bg-emerald-50 text-emerald-700'
+                              : pct >= 70
+                              ? 'bg-blue-50 text-blue-700'
+                              : pct >= 50
+                              ? 'bg-amber-50 text-amber-700'
+                              : 'bg-red-50 text-red-700'
+                          }`}
+                        >
+                          {pct}%
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5 text-slate-400 font-mono text-[11px]">
+                        {new Date(r.submittedAt).toLocaleString()}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Question-Wise Performance Breakdown */}
+      {activeForm && activeForm.questions.length > 0 && (
+        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs space-y-4">
+          <div className="pb-3 border-b border-slate-100">
+            <h3 className="font-bold text-slate-900 text-sm">Question-Wise Analysis</h3>
+            <p className="text-xs text-slate-500">
+              Option distributions and average score for each question in &ldquo;{activeForm.title}&rdquo;.
+            </p>
+          </div>
+
+          <div className="space-y-4">
+            {activeForm.questions.map((q, idx) => {
+              if (q.type === 'multiple_choice' && q.options) {
+                // Count how many students chose each option
+                const optionCounts = q.options.map((opt) => {
+                  const count = filteredResponses.filter(
+                    (r) => r.answers[q.id] === opt.text || r.answers[q.id] === opt.id
+                  ).length;
+                  return { ...opt, count };
                 });
 
+                const totalAnswersForQ = optionCounts.reduce((acc, curr) => acc + curr.count, 0);
+
                 return (
-                  <div
-                    key={q.id}
-                    className="p-4 rounded-xl bg-slate-50/70 border border-slate-200/90 space-y-3"
-                  >
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div key={q.id} className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
+                    <div className="flex items-start justify-between gap-2">
                       <div className="flex items-start space-x-2.5">
-                        <span className="w-5 h-5 rounded-md bg-teal-100 text-teal-900 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">
+                        <span className="w-5 h-5 rounded bg-teal-600 text-white font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">
                           {idx + 1}
                         </span>
                         <div>
-                          <h4 className="text-sm font-bold text-slate-900">{q.text}</h4>
-                          <span className="text-[11px] text-slate-500">
-                            Rating Scale: 1 to {scaleMax} ({q.scaleLabels?.min || 'Low'} →{' '}
-                            {q.scaleLabels?.max || 'High'})
+                          <h4 className="text-xs font-bold text-slate-900">{q.text}</h4>
+                          <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">
+                            Multiple Choice (4 Options)
                           </span>
                         </div>
                       </div>
 
-                      <div className="text-right shrink-0">
-                        <div className="text-lg font-bold text-teal-800">
-                          {avg} <span className="text-xs text-slate-400 font-normal">/ {scaleMax}</span>
-                        </div>
-                        <span className="text-[11px] text-slate-500">
-                          {scores.length} ratings ({percentage}%)
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Progress Bar */}
-                    <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
-                      <div
-                        className="bg-teal-600 h-full rounded-full transition-all"
-                        style={{ width: `${percentage}%` }}
-                      />
-                    </div>
-
-                    {/* Scale Distribution Grid */}
-                    <div className="grid grid-cols-5 sm:grid-cols-10 gap-1.5 pt-2">
-                      {Array.from({ length: scaleMax }, (_, i) => i + 1).map((val) => {
-                        const count = distMap[val] || 0;
-                        const pct = scores.length > 0 ? Math.round((count / scores.length) * 100) : 0;
-                        return (
-                          <div
-                            key={val}
-                            className="bg-white p-2 rounded-lg border border-slate-200 text-center"
-                          >
-                            <span className="block text-[11px] font-bold text-slate-800">
-                              {val}★
-                            </span>
-                            <span className="block text-xs font-semibold text-teal-700">{count}</span>
-                            <span className="block text-[9px] text-slate-400">{pct}%</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              }
-
-              if (q.type === 'multiple_choice' || q.type === 'yes_no') {
-                const options =
-                  q.type === 'yes_no' ? ['Yes', 'No'] : q.options || ['Option 1', 'Option 2'];
-                const counts: Record<string, number> = {};
-                options.forEach((o) => (counts[o] = 0));
-
-                formResponses.forEach((r) => {
-                  const ans = String(r.answers[q.id]);
-                  if (counts[ans] !== undefined) {
-                    counts[ans]++;
-                  }
-                });
-
-                return (
-                  <div
-                    key={q.id}
-                    className="p-4 rounded-xl bg-slate-50/70 border border-slate-200/90 space-y-3"
-                  >
-                    <div className="flex items-start space-x-2.5">
-                      <span className="w-5 h-5 rounded-md bg-sky-100 text-sky-900 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">
-                        {idx + 1}
+                      <span className="text-xs font-mono text-slate-500">
+                        {totalAnswersForQ} responses
                       </span>
-                      <div>
-                        <h4 className="text-sm font-bold text-slate-900">{q.text}</h4>
-                        <span className="text-[11px] text-slate-500">
-                          {q.type === 'yes_no' ? 'Yes / No Response' : 'Multiple Choice Poll'}
-                        </span>
-                      </div>
                     </div>
 
-                    <div className="space-y-2 pt-1">
-                      {options.map((opt) => {
-                        const count = counts[opt] || 0;
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 pt-1">
+                      {optionCounts.map((opt, optIdx) => {
                         const pct =
-                          formResponses.length > 0
-                            ? Math.round((count / formResponses.length) * 100)
+                          totalAnswersForQ > 0
+                            ? Math.round((opt.count / totalAnswersForQ) * 100)
                             : 0;
 
                         return (
-                          <div key={opt} className="space-y-1">
-                            <div className="flex items-center justify-between text-xs font-medium text-slate-700">
-                              <span>{opt}</span>
-                              <span className="text-slate-500 font-mono">
-                                {count} votes ({pct}%)
+                          <div
+                            key={opt.id || optIdx}
+                            className="bg-white p-3 rounded-lg border border-slate-200 space-y-1"
+                          >
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="font-bold text-slate-800 truncate" title={opt.text}>
+                                {String.fromCharCode(65 + optIdx)}. {opt.text}
+                              </span>
+                              <span className="font-mono text-teal-700 font-bold">
+                                {opt.score} pts
                               </span>
                             </div>
-                            <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+
+                            <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1">
+                              <span>{opt.count} students</span>
+                              <span className="font-bold">{pct}%</span>
+                            </div>
+
+                            <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
                               <div
-                                className="bg-sky-600 h-full rounded-full transition-all"
+                                className="bg-teal-600 h-1.5 rounded-full transition-all"
                                 style={{ width: `${pct}%` }}
                               />
                             </div>
@@ -473,53 +621,45 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
                 );
               }
 
+              // Text Question Comments list
               if (q.type === 'text') {
-                const textComments = formResponses
+                const comments = filteredResponses
                   .map((r) => ({
-                    student: r.studentName,
-                    id: r.studentId,
-                    comment: String(r.answers[q.id] || '').trim(),
+                    studentId: r.studentId,
+                    studentName: r.studentName,
+                    text: r.answers[q.id] as string,
+                    date: r.submittedAt,
                   }))
-                  .filter((item) => item.comment.length > 0);
+                  .filter((c) => c.text && c.text.trim().length > 0);
 
                 return (
-                  <div
-                    key={q.id}
-                    className="p-4 rounded-xl bg-slate-50/70 border border-slate-200/90 space-y-3"
-                  >
+                  <div key={q.id} className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
                     <div className="flex items-start space-x-2.5">
-                      <span className="w-5 h-5 rounded-md bg-amber-100 text-amber-900 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">
+                      <span className="w-5 h-5 rounded bg-slate-300 text-slate-700 font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">
                         {idx + 1}
                       </span>
                       <div>
-                        <h4 className="text-sm font-bold text-slate-900">{q.text}</h4>
-                        <span className="text-[11px] text-slate-500">
-                          Written Suggestions & Qualitative Remarks ({textComments.length} entries)
+                        <h4 className="text-xs font-bold text-slate-900">{q.text}</h4>
+                        <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">
+                          Open Text Feedback ({comments.length} comments)
                         </span>
                       </div>
                     </div>
 
-                    <div className="space-y-2 pt-1 max-h-56 overflow-y-auto">
-                      {textComments.length === 0 ? (
-                        <p className="text-xs text-slate-400 italic">No comments submitted.</p>
-                      ) : (
-                        textComments.map((entry, cIdx) => (
-                          <div
-                            key={cIdx}
-                            className="p-3 bg-white rounded-lg border border-slate-200 text-xs text-slate-700 shadow-2xs"
-                          >
-                            <p className="italic text-slate-800">
-                              &ldquo;{entry.comment}&rdquo;
-                            </p>
-                            <div className="mt-1.5 flex items-center space-x-2 text-[10px] text-slate-400">
-                              <span className="font-semibold text-slate-600">{entry.student}</span>
-                              <span>•</span>
-                              <span className="font-mono">{entry.id}</span>
-                            </div>
+                    {comments.length === 0 ? (
+                      <p className="text-xs text-slate-400 italic pl-7">No comments submitted yet.</p>
+                    ) : (
+                      <div className="pl-7 space-y-2 max-h-48 overflow-y-auto">
+                        {comments.map((c, cIdx) => (
+                          <div key={cIdx} className="p-2.5 bg-white rounded-lg border border-slate-200 text-xs">
+                            <p className="text-slate-800">{c.text}</p>
+                            <span className="text-[10px] text-slate-400 mt-1 block">
+                              By {c.studentName} ({c.studentId}) • {new Date(c.date).toLocaleDateString()}
+                            </span>
                           </div>
-                        ))
-                      )}
-                    </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 );
               }
@@ -527,70 +667,8 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
               return null;
             })}
           </div>
-        )}
-      </div>
-
-      {/* Submission Audit Roster */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-        <div className="p-4 border-b border-slate-200 flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-bold text-slate-900">
-              Verified Submission Audit Log ({formResponses.length})
-            </h3>
-            <p className="text-xs text-slate-500">
-              Demonstrating the enforced rule: each student records exactly one response.
-            </p>
-          </div>
-          <span className="text-xs px-2.5 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 font-semibold rounded-full flex items-center space-x-1">
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>Duplicate Prevention Verified</span>
-          </span>
         </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-slate-600">
-            <thead className="bg-slate-50 text-slate-700 border-b border-slate-200 font-semibold uppercase tracking-wider text-[11px]">
-              <tr>
-                <th className="py-2.5 px-4">#</th>
-                <th className="py-2.5 px-4">Student ID</th>
-                <th className="py-2.5 px-4">Student Name</th>
-                <th className="py-2.5 px-4">Submission Timestamp</th>
-                <th className="py-2.5 px-4">Submission Lock</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {formResponses.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="py-6 text-center text-slate-400">
-                    No submissions recorded for this form yet.
-                  </td>
-                </tr>
-              ) : (
-                formResponses.map((resp, i) => (
-                  <tr key={resp.id} className="hover:bg-slate-50/60">
-                    <td className="py-2.5 px-4 text-slate-400 font-mono">{i + 1}</td>
-                    <td className="py-2.5 px-4 font-mono font-bold text-slate-900">
-                      {resp.studentId}
-                    </td>
-                    <td className="py-2.5 px-4 font-semibold text-slate-800">
-                      {resp.studentName}
-                    </td>
-                    <td className="py-2.5 px-4 text-slate-500 font-mono">
-                      {new Date(resp.submittedAt).toLocaleString()}
-                    </td>
-                    <td className="py-2.5 px-4">
-                      <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                        <CheckCircle2 className="w-3 h-3" />
-                        <span>Locked (1 Response)</span>
-                      </span>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      )}
     </div>
   );
 };

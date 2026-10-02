@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Users2,
   UserPlus,
@@ -13,9 +13,21 @@ import {
   Square,
   Star,
   CheckCircle,
+  Upload,
+  FileSpreadsheet,
+  Download,
+  AlertCircle,
+  HelpCircle,
 } from 'lucide-react';
-import { TeacherItem, BatchItem, ClassItem, FeedbackForm, FeedbackResponse } from '@/types';
-import { saveTeacher, deleteTeacher } from '@/lib/storage';
+import {
+  TeacherItem,
+  BatchItem,
+  ClassItem,
+  FeedbackForm,
+  FeedbackResponse,
+  BulkTeacherRow,
+} from '@/types';
+import { saveTeacher, deleteTeacher, bulkAddTeachers } from '@/lib/storage';
 import { toastSuccess, toastError, confirmAction } from '@/lib/notification';
 
 interface TeachersTabProps {
@@ -38,7 +50,12 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
   const [showModal, setShowModal] = useState(false);
   const [editingTeacherId, setEditingTeacherId] = useState<string | null>(null);
 
-  // Form state
+  // Bulk Upload Modal state
+  const [showBulkModal, setShowBulkModal] = useState(false);
+  const [bulkRawText, setBulkRawText] = useState('');
+  const [isProcessingBulk, setIsProcessingBulk] = useState(false);
+
+  // Single Form state
   const [name, setName] = useState('');
   const [employeeId, setEmployeeId] = useState('');
   const [email, setEmail] = useState('');
@@ -101,51 +118,210 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
     };
 
     saveTeacher(teacherData);
-    toastSuccess(
-      editingTeacherId
-        ? `Faculty details for "${teacherData.name}" updated`
-        : `Faculty "${teacherData.name}" added to ${selectedBatchIds.length} batch(es)`
-    );
+    toastSuccess(editingTeacherId ? 'Faculty updated' : 'Faculty registered');
     setShowModal(false);
     onDataChanged();
   };
 
   const handleDeleteTeacher = async (teacher: TeacherItem) => {
+    const teacherResponses = responses.filter((r) => r.teacherId === teacher.id);
     const confirmed = await confirmAction({
-      title: `Remove Faculty "${teacher.name}"?`,
-      text: `This will remove the teacher from all ${teacher.assignedBatchIds.length} assigned batches.`,
-      confirmButtonText: 'Yes, Remove Faculty',
+      title: `Delete Faculty ${teacher.name}?`,
+      text:
+        teacherResponses.length > 0
+          ? `This faculty member has ${teacherResponses.length} student evaluation(s) recorded. Deleting them will remove their evaluations permanently.`
+          : 'Are you sure you want to remove this faculty member?',
+      confirmButtonText: 'Yes, Delete',
       cancelButtonText: 'Cancel',
       isDestructive: true,
     });
 
     if (confirmed) {
       deleteTeacher(teacher.id);
-      toastSuccess(`Faculty member removed`);
+      toastSuccess('Faculty member deleted');
       onDataChanged();
     }
   };
 
-  // Calculate teacher average feedback rating
-  const getTeacherAvgRating = (teacherId: string) => {
-    const teacherForms = forms.filter((f) => f.teacherId === teacherId);
-    const formIds = new Set(teacherForms.map((f) => f.id));
-    const teacherResponses = responses.filter((r) => formIds.has(r.formId));
+  // Bulk Upload Parsing
+  const parsedBulkRows: BulkTeacherRow[] = useMemo(() => {
+    if (!bulkRawText.trim()) return [];
 
-    if (teacherResponses.length === 0) return null;
+    const lines = bulkRawText.split(/\r?\n/).filter((l) => l.trim().length > 0);
+    const existingEmployeeIds = new Set(
+      teachers.map((t) => t.employeeId.trim().toUpperCase())
+    );
+    const seenInInput = new Set<string>();
 
-    let total = 0;
-    let count = 0;
-    teacherResponses.forEach((resp) => {
-      Object.values(resp.answers).forEach((val) => {
-        if (typeof val === 'number') {
-          total += val;
-          count++;
+    return lines.map((line, idx) => {
+      // Split by comma, tab, or semicolon
+      const parts = line.split(/[,\t;]/).map((p) => p.trim());
+
+      // Format can be: EmployeeId, Name, Email, Phone, Subjects
+      // or: Name, Email, Phone, Subjects, EmployeeId
+      let empId = '';
+      let teacherName = '';
+      let teacherEmail = '';
+      let teacherPhone = '';
+      let subjects = '';
+
+      if (parts.length >= 2) {
+        // If first part looks like EMP ID
+        if (/^[a-zA-Z0-9\-_]{3,15}$/.test(parts[0]) && !parts[0].includes(' ') && parts.length > 2) {
+          empId = parts[0];
+          teacherName = parts[1];
+          teacherEmail = parts[2] || '';
+          teacherPhone = parts[3] || '';
+          subjects = parts.slice(4).join(', ') || 'General Academics';
+        } else {
+          teacherName = parts[0];
+          teacherEmail = parts[1] || '';
+          teacherPhone = parts[2] || '';
+          subjects = parts[3] || 'General Academics';
+          empId = parts[4] || `EMP-${100 + idx}`;
         }
-      });
-    });
+      } else {
+        teacherName = parts[0];
+        empId = `EMP-${100 + idx}`;
+        subjects = 'General Academics';
+      }
 
-    return count > 0 ? (total / count).toFixed(1) : null;
+      // Check header row
+      if (
+        teacherName.toLowerCase() === 'name' ||
+        empId.toLowerCase() === 'employeeid' ||
+        empId.toLowerCase() === 'emp id'
+      ) {
+        return {
+          employeeId: empId,
+          name: teacherName,
+          email: '',
+          phone: '',
+          subjects: '',
+          isValid: false,
+          error: 'Header line skipped',
+        };
+      }
+
+      if (!teacherName) {
+        return {
+          employeeId: empId,
+          name: '',
+          email: teacherEmail,
+          phone: teacherPhone,
+          subjects,
+          isValid: false,
+          error: 'Missing faculty name',
+        };
+      }
+
+      const cleanEmpId = empId ? empId.toUpperCase() : `EMP-${100 + idx}`;
+      if (existingEmployeeIds.has(cleanEmpId)) {
+        return {
+          employeeId: cleanEmpId,
+          name: teacherName,
+          email: teacherEmail,
+          phone: teacherPhone,
+          subjects,
+          isValid: false,
+          error: `Duplicate Employee ID "${cleanEmpId}" already exists`,
+        };
+      }
+
+      if (seenInInput.has(cleanEmpId)) {
+        return {
+          employeeId: cleanEmpId,
+          name: teacherName,
+          email: teacherEmail,
+          phone: teacherPhone,
+          subjects,
+          isValid: false,
+          error: 'Duplicate ID in current batch',
+        };
+      }
+
+      seenInInput.add(cleanEmpId);
+
+      return {
+        employeeId: cleanEmpId,
+        name: teacherName,
+        email: teacherEmail || `${teacherName.toLowerCase().replace(/\s+/g, '.')}@institution.edu`,
+        phone: teacherPhone || '+91 98000 00000',
+        subjects,
+        isValid: true,
+      };
+    });
+  }, [bulkRawText, teachers]);
+
+  const validBulkRows = useMemo(() => {
+    return parsedBulkRows.filter((r) => r.isValid);
+  }, [parsedBulkRows]);
+
+  const handleDownloadSampleCSV = () => {
+    const csvContent =
+      'data:text/csv;charset=utf-8,' +
+      [
+        'Employee ID,Faculty Name,Email,Phone,Subject Specialization',
+        'EMP-101,Dr. Amit Verma,amit.verma@college.edu,+91 98765 43210,Physics',
+        'EMP-102,Prof. Sneha Roy,sneha.roy@college.edu,+91 98765 43211,Mathematics',
+        'EMP-103,Dr. Rajesh Gupta,rajesh.gupta@college.edu,+91 98765 43212,Chemistry',
+        'EMP-104,Ms. Pooja Nair,pooja.nair@college.edu,+91 98765 43213,Computer Science',
+      ].join('\n');
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', 'Faculty_Bulk_Upload_Sample.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      if (text) {
+        setBulkRawText(text);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleCommitBulkTeachers = () => {
+    if (validBulkRows.length === 0) {
+      toastError('No valid faculty records found to import');
+      return;
+    }
+
+    setIsProcessingBulk(true);
+
+    const teachersToAdd: TeacherItem[] = validBulkRows.map((r, idx) => ({
+      id: `tch-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`,
+      employeeId: r.employeeId,
+      name: r.name,
+      email: r.email,
+      phone: r.phone,
+      subjectSpecialization: r.subjects
+        ? r.subjects.split(',').map((s) => s.trim()).filter(Boolean)
+        : ['General Academics'],
+      assignedBatchIds: [],
+      status: 'active',
+      createdAt: new Date().toISOString(),
+    }));
+
+    const result = bulkAddTeachers(teachersToAdd);
+    setIsProcessingBulk(false);
+    toastSuccess(
+      `Successfully imported ${result.addedCount} faculty members! (${result.duplicateCount} duplicates skipped)`
+    );
+
+    setBulkRawText('');
+    setShowBulkModal(false);
+    onDataChanged();
   };
 
   return (
@@ -153,141 +329,156 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-200 gap-3">
         <div>
-          <h2 className="text-lg font-bold text-slate-900">Faculty Members</h2>
+          <h2 className="text-lg font-bold text-slate-900">Faculty Management</h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Manage teachers and their multi-batch assignments.
+            Add individual teachers or bulk import your faculty roster from CSV/Excel.
           </p>
         </div>
 
-        <button
-          onClick={handleOpenAddModal}
-          className="inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold shadow-xs transition-colors"
-        >
-          <UserPlus className="w-3.5 h-3.5" />
-          <span>Add Teacher</span>
-        </button>
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={() => setShowBulkModal(true)}
+            className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold border border-slate-300 transition-colors"
+          >
+            <Upload className="w-3.5 h-3.5 text-teal-600" />
+            <span>Bulk Import Faculty</span>
+          </button>
+
+          <button
+            onClick={handleOpenAddModal}
+            className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold shadow-xs transition-colors"
+          >
+            <UserPlus className="w-3.5 h-3.5" />
+            <span>Add Faculty</span>
+          </button>
+        </div>
       </div>
 
       {/* Teachers Grid */}
       {teachers.length === 0 ? (
         <div className="bg-white rounded-xl border border-slate-200 p-8 text-center shadow-xs">
           <Users2 className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-          <p className="text-sm font-semibold text-slate-700">No teachers registered yet</p>
-          <p className="text-xs text-slate-500 mt-1 mb-4">Add a teacher and assign them to one or more batches.</p>
-          <button
-            onClick={handleOpenAddModal}
-            className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-semibold"
-          >
-            Add Teacher
-          </button>
+          <p className="text-sm font-semibold text-slate-700">No faculty members registered</p>
+          <p className="text-xs text-slate-500 mt-1 mb-4">
+            Add faculty members individually or import your staff list in bulk via CSV.
+          </p>
+          <div className="flex items-center justify-center space-x-2">
+            <button
+              onClick={() => setShowBulkModal(true)}
+              className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold border border-slate-300"
+            >
+              Bulk Import Faculty
+            </button>
+            <button
+              onClick={handleOpenAddModal}
+              className="px-3.5 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-semibold"
+            >
+              Add Single Faculty
+            </button>
+          </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
           {teachers.map((teacher) => {
-            const avgRating = getTeacherAvgRating(teacher.id);
-            const teacherBatches = batches.filter((b) => teacher.assignedBatchIds.includes(b.id));
+            const assignedBatches = batches.filter((b) =>
+              teacher.assignedBatchIds.includes(b.id)
+            );
+            const teacherResponses = responses.filter((r) => r.teacherId === teacher.id);
+
+            // Compute teacher average score
+            let totalScore = 0;
+            let maxScore = 0;
+            teacherResponses.forEach((r) => {
+              totalScore += Number(r.totalScore) || 0;
+              maxScore += Number(r.maxPossibleScore) || 0;
+            });
+            const avgPct = maxScore > 0 ? ((totalScore / maxScore) * 100).toFixed(1) : null;
 
             return (
               <div
                 key={teacher.id}
-                className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs hover:border-slate-300 transition-all flex flex-col justify-between"
+                className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs hover:border-slate-300 transition-all flex flex-col justify-between"
               >
                 <div>
-                  {/* Top Bar with rating badge */}
                   <div className="flex items-start justify-between">
                     <div>
-                      <span className="font-mono text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                      <h3 className="font-bold text-slate-900 text-sm">{teacher.name}</h3>
+                      <span className="font-mono text-[11px] text-teal-800 bg-teal-50 px-1.5 py-0.5 rounded border border-teal-200">
                         {teacher.employeeId}
                       </span>
-                      <h3 className="font-bold text-slate-900 text-base mt-1">{teacher.name}</h3>
                     </div>
 
-                    {avgRating ? (
-                      <div className="flex items-center space-x-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold">
-                        <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
-                        <span>{avgRating}</span>
-                      </div>
-                    ) : (
-                      <span className="text-[10px] text-slate-400 bg-slate-50 px-2 py-0.5 rounded">
-                        No reviews yet
+                    {avgPct ? (
+                      <span className="px-2 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-300 rounded-full font-bold text-xs">
+                        {avgPct}%
                       </span>
+                    ) : (
+                      <span className="text-[10px] text-slate-400 font-mono">No Ratings</span>
                     )}
                   </div>
 
-                  {/* Contact info */}
-                  <div className="mt-3 space-y-1 text-xs text-slate-500">
-                    <div className="flex items-center space-x-2">
-                      <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span className="truncate">{teacher.email}</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span>{teacher.phone}</span>
-                    </div>
-                  </div>
-
-                  {/* Subjects */}
-                  <div className="mt-3 pt-2.5 border-t border-slate-100">
-                    <p className="text-[11px] font-semibold text-slate-600 mb-1 flex items-center space-x-1">
-                      <BookOpen className="w-3 h-3 text-slate-400" />
-                      <span>Specialization:</span>
-                    </p>
-                    <div className="flex flex-wrap gap-1">
-                      {teacher.subjectSpecialization.map((subj, idx) => (
-                        <span
-                          key={idx}
-                          className="text-[11px] px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200"
-                        >
-                          {subj}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Multi-Batch Assignments */}
-                  <div className="mt-3 pt-2.5 border-t border-slate-100">
-                    <div className="flex items-center justify-between text-[11px] font-semibold text-slate-600 mb-1.5">
-                      <span className="flex items-center space-x-1">
-                        <Layers className="w-3 h-3 text-teal-600" />
-                        <span>Assigned Batches ({teacherBatches.length}):</span>
+                  <div className="mt-3 space-y-1 text-xs text-slate-600">
+                    {teacher.email && (
+                      <div className="flex items-center space-x-1.5 text-slate-500">
+                        <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <span className="truncate">{teacher.email}</span>
+                      </div>
+                    )}
+                    {teacher.phone && (
+                      <div className="flex items-center space-x-1.5 text-slate-500">
+                        <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <span>{teacher.phone}</span>
+                      </div>
+                    )}
+                    <div className="flex items-center space-x-1.5 text-slate-700 pt-1">
+                      <BookOpen className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                      <span className="font-medium truncate">
+                        {teacher.subjectSpecialization.join(', ') || 'General Academics'}
                       </span>
                     </div>
+                  </div>
 
-                    {teacherBatches.length === 0 ? (
-                      <p className="text-[11px] text-amber-700 italic">No batches assigned yet</p>
+                  {/* Assigned Batches */}
+                  <div className="mt-3 pt-2.5 border-t border-slate-100">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-1">
+                      Teaching Batches ({assignedBatches.length}):
+                    </span>
+                    {assignedBatches.length === 0 ? (
+                      <span className="text-[11px] text-slate-400 italic">
+                        Available across all batches
+                      </span>
                     ) : (
-                      <div className="flex flex-wrap gap-1.5">
-                        {teacherBatches.map((b) => {
-                          const parentClass = classes.find((c) => c.id === b.classId);
-                          return (
-                            <span
-                              key={b.id}
-                              className="text-[10px] px-2 py-0.5 rounded-md bg-teal-50 text-teal-800 border border-teal-200 font-medium"
-                            >
-                              {b.name} {parentClass ? `(${parentClass.code})` : ''}
-                            </span>
-                          );
-                        })}
+                      <div className="flex flex-wrap gap-1">
+                        {assignedBatches.map((b) => (
+                          <span
+                            key={b.id}
+                            className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[11px] font-medium"
+                          >
+                            {b.name}
+                          </span>
+                        ))}
                       </div>
                     )}
                   </div>
                 </div>
 
-                {/* Card actions */}
-                <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-end space-x-2">
-                  <button
-                    onClick={() => handleOpenEditModal(teacher)}
-                    className="px-2.5 py-1 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors"
-                  >
-                    Edit / Batches
-                  </button>
-                  <button
-                    onClick={() => handleDeleteTeacher(teacher)}
-                    className="p-1.5 text-slate-400 hover:text-red-600 rounded-md transition-colors"
-                    title="Delete Teacher"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+                  <span>Evaluations: <strong className="text-slate-800">{teacherResponses.length}</strong></span>
+                  <div className="flex items-center space-x-1">
+                    <button
+                      onClick={() => handleOpenEditModal(teacher)}
+                      className="px-2 py-1 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded text-xs font-medium"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleDeleteTeacher(teacher)}
+                      className="p-1 text-slate-400 hover:text-red-600 rounded"
+                      title="Delete Faculty"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               </div>
             );
@@ -299,103 +490,94 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <h3 className="font-bold text-slate-900 text-base flex items-center space-x-2">
-                <Users2 className="w-4 h-4 text-teal-600" />
-                <span>{editingTeacherId ? 'Edit Faculty & Batches' : 'Register New Faculty Member'}</span>
-              </h3>
-              <button
-                onClick={() => setShowModal(false)}
-                className="text-slate-400 hover:text-slate-600 text-sm font-bold"
-              >
-                ✕
-              </button>
-            </div>
+            <h3 className="font-bold text-slate-900 text-base mb-1">
+              {editingTeacherId ? 'Edit Faculty Details' : 'Register New Faculty'}
+            </h3>
+            <p className="text-xs text-slate-500 mb-4">
+              Enter staff details and assign to classes/batches.
+            </p>
 
-            <form onSubmit={handleSaveTeacher} className="mt-4 space-y-4">
+            <form onSubmit={handleSaveTeacher} className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Full Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Dr. Ramesh Gupta"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Faculty Full Name *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Dr. Rajeshwar Sharma"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-teal-500"
-                  />
-                </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
                     Employee ID
                   </label>
                   <input
                     type="text"
-                    placeholder="e.g. EMP-PHY-101"
+                    placeholder="EMP-101"
                     value={employeeId}
                     onChange={(e) => setEmployeeId(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg uppercase focus:outline-hidden focus:ring-2 focus:ring-teal-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Email</label>
-                  <input
-                    type="email"
-                    placeholder="faculty@institution.edu"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-teal-500"
+                    className="w-full px-3 py-2 text-xs sm:text-sm font-mono border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-teal-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Phone</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Contact Phone
+                  </label>
                   <input
                     type="text"
                     placeholder="+91 98765 43210"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-teal-500"
+                    className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-teal-500"
                   />
                 </div>
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Subjects / Specialization (comma separated)
+                  Email Address
                 </label>
                 <input
-                  type="text"
-                  placeholder="e.g. Physics, Numerical Analysis, Lab Practicals"
-                  value={subjectsInput}
-                  onChange={(e) => setSubjectsInput(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-teal-500"
+                  type="email"
+                  placeholder="faculty@college.edu"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-teal-500"
                 />
               </div>
 
-              {/* Multi-Batch Selection Section */}
-              <div className="pt-2 border-t border-slate-100">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-xs font-semibold text-slate-800">
-                    Assign to Batches (Can be in multiple batches)
-                  </label>
-                  <span className="text-[11px] text-teal-700 font-semibold">
-                    {selectedBatchIds.length} Selected
-                  </span>
-                </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Subject Specialization (Comma separated)
+                </label>
+                <input
+                  type="text"
+                  placeholder="Physics, Applied Mechanics, Quantum Theory"
+                  value={subjectsInput}
+                  onChange={(e) => setSubjectsInput(e.target.value)}
+                  className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
 
-                <div className="border border-slate-200 rounded-xl p-3 bg-slate-50 max-h-48 overflow-y-auto space-y-3">
+              {/* Batches Assignment */}
+              <div className="pt-2">
+                <label className="block text-xs font-bold text-slate-800 mb-2">
+                  Assign to Batches:
+                </label>
+                <div className="space-y-2 max-h-40 overflow-y-auto border border-slate-200 rounded-lg p-2.5 bg-slate-50">
                   {classes.map((cls) => {
                     const classBatches = batches.filter((b) => b.classId === cls.id);
                     if (classBatches.length === 0) return null;
 
                     return (
-                      <div key={cls.id} className="space-y-1.5">
-                        <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                      <div key={cls.id} className="space-y-1">
+                        <div className="text-[11px] font-bold text-slate-500 uppercase">
                           {cls.name} ({cls.code})
                         </div>
                         <div className="space-y-1 pl-1">
@@ -444,6 +626,139 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Import Faculty Modal */}
+      {showBulkModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl max-w-3xl w-full p-6 shadow-2xl border border-slate-200 max-h-[92vh] flex flex-col justify-between">
+            <div className="overflow-y-auto pr-1 space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base">Bulk Import Faculty Roster</h3>
+                  <p className="text-xs text-slate-500">
+                    Paste lines from CSV / Excel or upload a file. Format: EmployeeId, Name, Email, Phone, Subjects
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowBulkModal(false)}
+                  className="text-slate-400 hover:text-slate-600 text-sm font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                <div className="flex items-center space-x-2">
+                  <label className="cursor-pointer inline-flex items-center space-x-1.5 px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-700 font-semibold hover:bg-slate-50 shadow-2xs">
+                    <FileSpreadsheet className="w-4 h-4 text-teal-600" />
+                    <span>Upload CSV File</span>
+                    <input
+                      type="file"
+                      accept=".csv,.txt,.tsv"
+                      onChange={handleFileUpload}
+                      className="hidden"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleDownloadSampleCSV}
+                    className="inline-flex items-center space-x-1 text-teal-700 hover:underline font-semibold"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Download Sample CSV</span>
+                  </button>
+                </div>
+
+                <span className="text-[11px] text-slate-500">
+                  {validBulkRows.length} valid / {parsedBulkRows.length} total rows
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Paste Faculty Rows (One per line)
+                </label>
+                <textarea
+                  rows={5}
+                  value={bulkRawText}
+                  onChange={(e) => setBulkRawText(e.target.value)}
+                  placeholder={`EMP-101, Dr. Amit Verma, amit.verma@college.edu, +91 98765 43210, Physics\nEMP-102, Prof. Sneha Roy, sneha.roy@college.edu, +91 98765 43211, Mathematics`}
+                  className="w-full p-3 font-mono text-xs border border-slate-300 rounded-xl bg-white focus:outline-hidden focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+
+              {/* Preview Table */}
+              {parsedBulkRows.length > 0 && (
+                <div className="border border-slate-200 rounded-xl overflow-hidden">
+                  <div className="bg-slate-50 px-3 py-2 border-b border-slate-200 flex items-center justify-between text-xs">
+                    <span className="font-bold text-slate-800">Preview & Validation</span>
+                    <span className="text-emerald-700 font-semibold font-mono">
+                      ✓ {validBulkRows.length} Ready to Import
+                    </span>
+                  </div>
+
+                  <div className="max-h-48 overflow-y-auto">
+                    <table className="w-full text-xs text-left">
+                      <thead className="bg-slate-100 text-slate-600 text-[10px] uppercase font-semibold">
+                        <tr>
+                          <th className="px-3 py-1.5">Emp ID</th>
+                          <th className="px-3 py-1.5">Name</th>
+                          <th className="px-3 py-1.5">Email</th>
+                          <th className="px-3 py-1.5">Subjects</th>
+                          <th className="px-3 py-1.5">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {parsedBulkRows.map((row, idx) => (
+                          <tr key={idx} className={row.isValid ? 'bg-white' : 'bg-red-50/50'}>
+                            <td className="px-3 py-1.5 font-mono text-slate-700">{row.employeeId}</td>
+                            <td className="px-3 py-1.5 font-medium text-slate-800">{row.name}</td>
+                            <td className="px-3 py-1.5 text-slate-500">{row.email}</td>
+                            <td className="px-3 py-1.5 text-slate-600">{row.subjects}</td>
+                            <td className="px-3 py-1.5">
+                              {row.isValid ? (
+                                <span className="inline-flex items-center space-x-1 text-emerald-700 text-[11px] font-semibold">
+                                  <span>✓ Ready</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center space-x-1 text-red-600 text-[11px]">
+                                  <span>✕ {row.error}</span>
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between pt-4 border-t border-slate-100 mt-4">
+              <button
+                type="button"
+                onClick={() => setShowBulkModal(false)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={handleCommitBulkTeachers}
+                disabled={validBulkRows.length === 0 || isProcessingBulk}
+                className="inline-flex items-center space-x-1.5 px-5 py-2 bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white text-xs font-bold rounded-lg shadow-sm"
+              >
+                <CheckCircle className="w-4 h-4" />
+                <span>
+                  {isProcessingBulk ? 'Importing...' : `Import ${validBulkRows.length} Faculty`}
+                </span>
+              </button>
+            </div>
           </div>
         </div>
       )}

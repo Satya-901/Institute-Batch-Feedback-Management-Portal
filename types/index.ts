@@ -35,25 +35,27 @@ export interface StudentItem {
   id: string;
   studentId: string;
   name: string;
-  dob: string; // Used as initial password e.g. YYYY-MM-DD
-  password?: string; // If student changed password
+  dob?: string;
+  password?: string;
   hasChangedPassword?: boolean;
-  batchId: string;
+  batchId?: string;
+  classId?: string;
   createdAt: string;
 }
 
-export type QuestionType = 'rating' | 'multiple_choice' | 'text' | 'yes_no';
+export type QuestionType = 'multiple_choice' | 'text';
+
+export interface QuestionOption {
+  id: string;
+  text: string;
+  score: number; // Numeric marks for this choice (e.g. 10, 8, 5, 2)
+}
 
 export interface FeedbackQuestion {
   id: string;
   text: string;
   type: QuestionType;
-  scaleMax?: number; // 3, 5, or 10 for rating
-  scaleLabels?: {
-    min: string;
-    max: string;
-  };
-  options?: string[]; // for multiple_choice
+  options?: QuestionOption[]; // 4 options with scores
   required: boolean;
   teacherId?: string; // Optional: evaluate specific teacher
 }
@@ -62,8 +64,8 @@ export interface FeedbackForm {
   id: string;
   title: string;
   description: string;
-  batchId: string;
-  teacherId?: string; // Optional: evaluate specific teacher or general batch
+  classId: string; // Associated class
+  batchId: string; // Specific batch or 'all'
   questions: FeedbackQuestion[];
   status: 'active' | 'closed';
   expiresAt?: string;
@@ -74,11 +76,15 @@ export interface FeedbackForm {
 export interface FeedbackResponse {
   id: string;
   formId: string;
-  batchId: string;
+  classId?: string;
+  batchId?: string;
   studentId: string;
   studentName: string;
-  teacherId?: string; // Optional: which teacher this response was for
-  answers: Record<string, number | string | string[]>;
+  teacherId?: string; // Specific teacher evaluated
+  answers: Record<string, string | number>;
+  totalScore?: number; // Total points awarded by this student
+  maxPossibleScore?: number; // Max points possible for this submission
+  scorePercentage?: number; // (totalScore / maxPossibleScore) * 100
   submittedAt: string;
 }
 
@@ -87,7 +93,17 @@ export type ActiveTab = 'overview' | 'classes' | 'teachers' | 'students' | 'feed
 export interface BulkStudentRow {
   studentId: string;
   name: string;
-  dob: string;
+  dob?: string;
+  isValid: boolean;
+  error?: string;
+}
+
+export interface BulkTeacherRow {
+  employeeId: string;
+  name: string;
+  email: string;
+  phone: string;
+  subjects: string;
   isValid: boolean;
   error?: string;
 }

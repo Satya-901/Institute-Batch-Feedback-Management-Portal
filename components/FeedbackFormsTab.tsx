@@ -8,12 +8,14 @@ import {
   Trash2,
   Power,
   ExternalLink,
-  Users2,
   Plus,
   QrCode,
   Filter,
   UserCheck,
-  X,
+  CheckCircle2,
+  Award,
+  Layers,
+  HelpCircle,
 } from 'lucide-react';
 import {
   FeedbackForm,
@@ -24,6 +26,7 @@ import {
   StudentItem,
   FeedbackResponse,
   QuestionType,
+  QuestionOption,
 } from '@/types';
 import {
   saveFeedbackForm,
@@ -60,7 +63,6 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
 }) => {
   // Modal visibility
   const [showCreateModal, setShowCreateModal] = useState<boolean>(Boolean(initialBatchIdToCreate));
-  const [isPreselectedBatch, setIsPreselectedBatch] = useState<boolean>(Boolean(initialBatchIdToCreate));
 
   // QR Code Modal State
   const [qrModalData, setQrModalData] = useState<{
@@ -76,84 +78,138 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
     shareUrl: '',
   });
 
-  // Batch filter for viewing forms
+  // Filters for viewing forms
+  const [selectedClassFilter, setSelectedClassFilter] = useState<string>('all');
   const [selectedBatchFilter, setSelectedBatchFilter] = useState<string>('all');
 
   // Form creation fields
-  const [selectedBatchId, setSelectedBatchId] = useState<string>(
-    initialBatchIdToCreate || batches[0]?.id || ''
-  );
+  const initialClassId = useMemo(() => {
+    if (initialBatchIdToCreate) {
+      const b = batches.find((x) => x.id === initialBatchIdToCreate);
+      if (b) return b.classId;
+    }
+    return classes[0]?.id || '';
+  }, [initialBatchIdToCreate, batches, classes]);
+
+  const [selectedClassId, setSelectedClassId] = useState<string>(initialClassId);
+  const [selectedBatchId, setSelectedBatchId] = useState<string>(initialBatchIdToCreate || 'all');
   const [title, setTitle] = useState('Academic Term Feedback & Faculty Evaluation');
-  const [description, setDescription] = useState('Evaluate course delivery, practical doubts, and faculty support.');
+  const [description, setDescription] = useState('Evaluate course delivery, subject knowledge, and faculty support.');
   const [expiresAt, setExpiresAt] = useState('2026-12-31');
 
-  // Custom questions
+  // Custom questions (Default 2 Multiple Choice with 4 options and scores, plus 1 Text box)
   const [questions, setQuestions] = useState<FeedbackQuestion[]>([
     {
       id: 'q-1',
-      text: 'Clarity of theoretical explanations and subject knowledge',
-      type: 'rating',
-      scaleMax: 5,
-      scaleLabels: { min: 'Needs Improvement', max: 'Excellent' },
+      text: 'Subject knowledge and clarity of explanation',
+      type: 'multiple_choice',
+      options: [
+        { id: 'opt-1-1', text: 'Excellent', score: 10 },
+        { id: 'opt-1-2', text: 'Good', score: 8 },
+        { id: 'opt-1-3', text: 'Average', score: 5 },
+        { id: 'opt-1-4', text: 'Poor', score: 2 },
+      ],
       required: true,
       teacherId: '',
     },
     {
       id: 'q-2',
-      text: 'Teacher engagement, problem-solving support, and approachability',
-      type: 'rating',
-      scaleMax: 5,
-      scaleLabels: { min: 'Poor', max: 'Outstanding' },
+      text: 'Punctuality, syllabus coverage and doubt-solving support',
+      type: 'multiple_choice',
+      options: [
+        { id: 'opt-2-1', text: 'Always on time & very helpful', score: 10 },
+        { id: 'opt-2-2', text: 'Regular & clears doubts', score: 8 },
+        { id: 'opt-2-3', text: 'Average support', score: 5 },
+        { id: 'opt-2-4', text: 'Needs significant improvement', score: 2 },
+      ],
       required: true,
       teacherId: '',
     },
     {
       id: 'q-3',
-      text: 'Suggestions or areas where you need additional academic support',
+      text: 'Suggestions or specific comments for improvement (Optional)',
       type: 'text',
       required: false,
       teacherId: '',
     },
   ]);
 
-  // Teachers assigned to the selected batch (kept in background/state)
-  const batchTeachers = useMemo(() => {
-    if (!selectedBatchId) return [];
-    return teachers.filter((t) => t.assignedBatchIds.includes(selectedBatchId));
-  }, [selectedBatchId, teachers]);
+  // Available batches for selected class
+  const classBatches = useMemo(() => {
+    if (!selectedClassId) return [];
+    return batches.filter((b) => b.classId === selectedClassId);
+  }, [selectedClassId, batches]);
+
+  // Teachers assigned to the selected class / batch
+  const eligibleTeachers = useMemo(() => {
+    if (selectedBatchId && selectedBatchId !== 'all') {
+      return teachers.filter((t) => t.assignedBatchIds.includes(selectedBatchId));
+    }
+    if (selectedClassId) {
+      const batchIdsInClass = batches.filter((b) => b.classId === selectedClassId).map((b) => b.id);
+      return teachers.filter(
+        (t) =>
+          t.assignedBatchIds.length === 0 ||
+          t.assignedBatchIds.some((bid) => batchIdsInClass.includes(bid))
+      );
+    }
+    return teachers;
+  }, [selectedClassId, selectedBatchId, batches, teachers]);
 
   // Filtered forms list
   const filteredForms = useMemo(() => {
-    if (selectedBatchFilter === 'all') return forms;
-    return forms.filter((f) => f.batchId === selectedBatchFilter);
-  }, [forms, selectedBatchFilter]);
+    return forms.filter((f) => {
+      if (selectedClassFilter !== 'all' && f.classId && f.classId !== selectedClassFilter) {
+        return false;
+      }
+      if (selectedBatchFilter !== 'all' && f.batchId !== selectedBatchFilter) {
+        return false;
+      }
+      return true;
+    });
+  }, [forms, selectedClassFilter, selectedBatchFilter]);
 
-  // Open modal from common button or batch action
+  // Open modal
   const handleOpenCreateModal = (preselectedBatchId?: string) => {
-    const targetBatch = preselectedBatchId || batches[0]?.id || '';
+    let targetClass = classes[0]?.id || '';
+    let targetBatch = 'all';
+
+    if (preselectedBatchId) {
+      const b = batches.find((x) => x.id === preselectedBatchId);
+      if (b) {
+        targetClass = b.classId;
+        targetBatch = b.id;
+      }
+    }
+
+    setSelectedClassId(targetClass);
     setSelectedBatchId(targetBatch);
-    setIsPreselectedBatch(Boolean(preselectedBatchId));
     setTitle('Academic Term Feedback & Faculty Evaluation');
-    setDescription('Evaluate course delivery, practical doubts, and faculty support.');
+    setDescription('Evaluate course delivery, subject knowledge, and faculty support.');
     setExpiresAt('2026-12-31');
     setShowCreateModal(true);
   };
 
   const handleCloseModal = () => {
     setShowCreateModal(false);
-    setIsPreselectedBatch(false);
     if (onClearInitialBatchId) onClearInitialBatchId();
   };
 
-  // Add question
-  const handleAddQuestion = (type: QuestionType = 'rating') => {
+  // Add question (ONLY multiple_choice or text allowed)
+  const handleAddQuestion = (type: QuestionType) => {
     const newQ: FeedbackQuestion = {
       id: `q-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
       text: '',
       type,
-      scaleMax: 5,
-      scaleLabels: { min: 'Needs Improvement', max: 'Excellent' },
-      options: type === 'multiple_choice' ? ['Option A', 'Option B', 'Option C'] : undefined,
+      options:
+        type === 'multiple_choice'
+          ? [
+              { id: 'opt-1', text: 'Option A (Excellent)', score: 10 },
+              { id: 'opt-2', text: 'Option B (Good)', score: 8 },
+              { id: 'opt-3', text: 'Option C (Average)', score: 5 },
+              { id: 'opt-4', text: 'Option D (Poor)', score: 2 },
+            ]
+          : undefined,
       required: true,
       teacherId: '',
     };
@@ -172,44 +228,28 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
     setQuestions((prev) => prev.filter((q) => q.id !== id));
   };
 
-  // Multiple Choice Options handlers
-  const handleAddOption = (questionId: string) => {
-    setQuestions((prev) =>
-      prev.map((q) => {
-        if (q.id === questionId) {
-          const currentOptions = q.options || [];
-          return {
-            ...q,
-            options: [...currentOptions, `Option ${String.fromCharCode(65 + currentOptions.length)}`],
-          };
-        }
-        return q;
-      })
-    );
-  };
-
-  const handleUpdateOption = (questionId: string, optionIndex: number, newValue: string) => {
+  // Update specific option in multiple choice question
+  const handleUpdateOption = (
+    questionId: string,
+    optionIndex: number,
+    field: 'text' | 'score',
+    value: string | number
+  ) => {
     setQuestions((prev) =>
       prev.map((q) => {
         if (q.id === questionId && q.options) {
           const nextOptions = [...q.options];
-          nextOptions[optionIndex] = newValue;
-          return { ...q, options: nextOptions };
-        }
-        return q;
-      })
-    );
-  };
-
-  const handleDeleteOption = (questionId: string, optionIndex: number) => {
-    setQuestions((prev) =>
-      prev.map((q) => {
-        if (q.id === questionId && q.options) {
-          if (q.options.length <= 2) {
-            toastError('Multiple choice questions require at least 2 options');
-            return q;
+          if (field === 'score') {
+            nextOptions[optionIndex] = {
+              ...nextOptions[optionIndex],
+              score: Number(value) || 0,
+            };
+          } else {
+            nextOptions[optionIndex] = {
+              ...nextOptions[optionIndex],
+              text: String(value),
+            };
           }
-          const nextOptions = q.options.filter((_, i) => i !== optionIndex);
           return { ...q, options: nextOptions };
         }
         return q;
@@ -219,8 +259,8 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
 
   const handleSaveForm = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedBatchId) {
-      toastError('Please select a target batch');
+    if (!selectedClassId) {
+      toastError('Please select a target class');
       return;
     }
     if (!title.trim()) {
@@ -238,15 +278,32 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
       return;
     }
 
-    const batchObj = batches.find((b) => b.id === selectedBatchId);
-    const prefix = (batchObj?.name.replace(/[^a-zA-Z0-9]/g, '').slice(0, 3) || 'FB').toUpperCase();
+    // Validate 4 options for multiple choice questions
+    for (const q of questions) {
+      if (q.type === 'multiple_choice') {
+        if (!q.options || q.options.length !== 4) {
+          toastError(`Question "${q.text.slice(0, 30)}" must have exactly 4 options with scores`);
+          return;
+        }
+        for (const opt of q.options) {
+          if (!opt.text.trim()) {
+            toastError('All 4 options must have text labels');
+            return;
+          }
+        }
+      }
+    }
+
+    const classObj = classes.find((c) => c.id === selectedClassId);
+    const prefix = (classObj?.code || 'FB').replace(/[^a-zA-Z0-9]/g, '').slice(0, 3).toUpperCase();
     const code = `${prefix}-${Math.floor(100 + Math.random() * 900)}`;
 
     const newForm: FeedbackForm = {
       id: `fb-form-${Date.now()}`,
       title: title.trim(),
       description: description.trim(),
-      batchId: selectedBatchId,
+      classId: selectedClassId,
+      batchId: selectedBatchId || 'all',
       questions,
       status: 'active',
       expiresAt: expiresAt || undefined,
@@ -255,7 +312,7 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
     };
 
     saveFeedbackForm(newForm);
-    toastSuccess(`Feedback form created! (Code: ${newForm.shareableCode})`);
+    toastSuccess(`Feedback form created! (Share Code: ${newForm.shareableCode})`);
     handleCloseModal();
     onDataChanged();
   };
@@ -274,9 +331,10 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
     const formResponses = responses.filter((r) => r.formId === form.id);
     const confirmed = await confirmAction({
       title: 'Delete Feedback Form?',
-      text: formResponses.length > 0
-        ? `This form has ${formResponses.length} recorded response(s). Deleting will remove these responses permanently.`
-        : 'Are you sure you want to delete this feedback form?',
+      text:
+        formResponses.length > 0
+          ? `This form has ${formResponses.length} recorded response(s). Deleting will remove these responses permanently.`
+          : 'Are you sure you want to delete this feedback form?',
       confirmButtonText: 'Yes, Delete',
       cancelButtonText: 'Cancel',
       isDestructive: true,
@@ -294,9 +352,9 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
     const shareUrl = `${origin}?code=${form.shareableCode}`;
     if (navigator.clipboard) {
       navigator.clipboard.writeText(shareUrl);
-      toastSuccess(`Link copied (${form.shareableCode})`);
+      toastSuccess(`Evaluation link copied (${form.shareableCode})`);
     } else {
-      toastSuccess(`Code: ${form.shareableCode}`);
+      toastSuccess(`Share Code: ${form.shareableCode}`);
     }
   };
 
@@ -308,12 +366,10 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
       isOpen: true,
       formTitle: form.title,
       shareableCode: form.shareableCode,
-      batchName: batch?.name,
+      batchName: batch?.name || 'Class Evaluation',
       shareUrl,
     });
   };
-
-  const currentBatchObj = batches.find((b) => b.id === selectedBatchId);
 
   return (
     <div className="space-y-6">
@@ -322,28 +378,25 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
         <div>
           <h2 className="text-lg font-bold text-slate-900">Feedback Forms</h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Create multiple evaluations per batch with assigned questions and QR codes.
+            Create evaluations with scored Multiple Choice (4 options) and Text box questions.
           </p>
         </div>
 
-        <div className="flex items-center space-x-2">
-          {batches.length > 1 && (
+        <div className="flex flex-wrap items-center gap-2">
+          {classes.length > 0 && (
             <div className="flex items-center space-x-1.5">
               <Filter className="w-3.5 h-3.5 text-slate-400" />
               <select
-                value={selectedBatchFilter}
-                onChange={(e) => setSelectedBatchFilter(e.target.value)}
+                value={selectedClassFilter}
+                onChange={(e) => setSelectedClassFilter(e.target.value)}
                 className="text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 font-medium"
               >
-                <option value="all">All Batches ({forms.length})</option>
-                {batches.map((b) => {
-                  const bCount = forms.filter((f) => f.batchId === b.id).length;
-                  return (
-                    <option key={b.id} value={b.id}>
-                      {b.name} ({bCount})
-                    </option>
-                  );
-                })}
+                <option value="all">All Classes ({forms.length})</option>
+                {classes.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
               </select>
             </div>
           )}
@@ -364,7 +417,7 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
           <ClipboardList className="w-10 h-10 text-slate-300 mx-auto mb-2" />
           <p className="text-sm font-semibold text-slate-700">No feedback forms found</p>
           <p className="text-xs text-slate-500 mt-1 mb-4">
-            You can create multiple feedback forms for any batch whenever required.
+            Create an evaluation form with Multiple Choice options (with marks) and Text box questions.
           </p>
           <button
             onClick={() => handleOpenCreateModal()}
@@ -376,13 +429,14 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
           {filteredForms.map((form) => {
-            const batch = batches.find((b) => b.id === form.batchId);
+            const classObj = classes.find((c) => c.id === form.classId);
+            const batchObj = batches.find((b) => b.id === form.batchId);
             const formResponses = responses.filter((r) => r.formId === form.id);
-            const batchStudents = students.filter((s) => s.batchId === form.batchId);
             const isActive = form.status === 'active';
             const isExpired = form.expiresAt && new Date(form.expiresAt) < new Date();
 
-            // Count teacher specific questions
+            const mcqCount = form.questions.filter((q) => q.type === 'multiple_choice').length;
+            const textCount = form.questions.filter((q) => q.type === 'text').length;
             const teacherSpecificCount = form.questions.filter((q) => Boolean(q.teacherId)).length;
 
             return (
@@ -392,9 +446,15 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
               >
                 <div>
                   <div className="flex items-start justify-between gap-2">
-                    <span className="text-[11px] font-semibold text-teal-800 bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
-                      {batch?.name || 'Batch'}
-                    </span>
+                    <div className="flex items-center space-x-1.5 flex-wrap gap-1">
+                      <span className="text-[11px] font-semibold text-teal-800 bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
+                        {classObj?.name || 'Class'}
+                      </span>
+                      <span className="text-[11px] font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
+                        {batchObj ? batchObj.name : 'All Batches / Direct'}
+                      </span>
+                    </div>
+
                     <span
                       className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border shrink-0 ${
                         !isActive || isExpired
@@ -412,24 +472,29 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
                   )}
 
                   <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
-                    {teacherSpecificCount > 0 ? (
-                      <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-medium">
-                        <UserCheck className="w-3 h-3 text-amber-600" />
-                        <span>{teacherSpecificCount} Teacher-Specific Questions</span>
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded bg-slate-100 text-slate-600 text-[11px]">
-                        <span>General Course Review</span>
+                    <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded bg-blue-50 text-blue-800 border border-blue-200 text-[11px] font-medium">
+                      <Award className="w-3 h-3 text-blue-600" />
+                      <span>{mcqCount} Scored Multiple Choice (4 Options)</span>
+                    </span>
+
+                    {textCount > 0 && (
+                      <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[11px]">
+                        <span>{textCount} Text Comments</span>
                       </span>
                     )}
 
-                    <span className="text-[11px] text-slate-400 font-mono self-center">
-                      {form.questions.length} questions
-                    </span>
+                    {teacherSpecificCount > 0 && (
+                      <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-medium">
+                        <UserCheck className="w-3 h-3 text-amber-600" />
+                        <span>{teacherSpecificCount} Assigned to Teacher</span>
+                      </span>
+                    )}
                   </div>
 
                   <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-                    <span>Submissions: <strong className="text-slate-800">{formResponses.length}</strong> / {batchStudents.length}</span>
+                    <span>
+                      Submissions: <strong className="text-slate-800">{formResponses.length}</strong>
+                    </span>
                     <span className="text-[11px] text-slate-400 font-mono">
                       Valid: {form.expiresAt || 'No Expiry'}
                     </span>
@@ -458,7 +523,7 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
                       onClick={() => onOpenTestStudentView(form.id)}
                       className="inline-flex items-center space-x-1 px-2.5 py-1 rounded bg-teal-50 hover:bg-teal-100 text-teal-800 text-xs font-medium"
                     >
-                      <span>Open</span>
+                      <span>Open Form</span>
                       <ExternalLink className="w-3 h-3" />
                     </button>
                   </div>
@@ -494,11 +559,9 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
               {/* Header */}
               <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                 <div>
-                  <h3 className="font-bold text-slate-900 text-base">
-                    Create Feedback Form
-                  </h3>
+                  <h3 className="font-bold text-slate-900 text-base">Create Feedback Form</h3>
                   <p className="text-xs text-slate-500">
-                    Build evaluation forms with common and teacher-specific questions.
+                    Two fields only: Multiple Choice (4 scored options) and Text box questions.
                   </p>
                 </div>
                 <button
@@ -509,41 +572,55 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
                 </button>
               </div>
 
-              {/* Target Batch Selector */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Target Batch *
-                </label>
-                {isPreselectedBatch ? (
-                  <div className="flex items-center justify-between p-2.5 bg-teal-50 border border-teal-200 rounded-lg text-xs">
-                    <span className="font-bold text-teal-900">
-                      {currentBatchObj?.name || 'Selected Batch'}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setIsPreselectedBatch(false)}
-                      className="text-[11px] text-teal-700 hover:underline font-medium"
-                    >
-                      Change Batch
-                    </button>
-                  </div>
-                ) : (
+              {/* Class & Batch Selectors */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 mb-1">
+                    Select Target Class *
+                  </label>
                   <select
                     required
+                    value={selectedClassId}
+                    onChange={(e) => {
+                      setSelectedClassId(e.target.value);
+                      setSelectedBatchId('all');
+                    }}
+                    className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-teal-500 bg-white"
+                  >
+                    {classes.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} ({c.code})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 mb-1">
+                    Target Batch (Optional)
+                  </label>
+                  <select
                     value={selectedBatchId}
                     onChange={(e) => setSelectedBatchId(e.target.value)}
                     className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-teal-500 bg-white"
                   >
-                    {batches.map((b) => {
-                      const c = classes.find((cl) => cl.id === b.classId);
-                      return (
-                        <option key={b.id} value={b.id}>
-                          {b.name} ({c?.code || 'Class'})
-                        </option>
-                      );
-                    })}
+                    <option value="all">
+                      {classBatches.length > 0
+                        ? 'All Batches in this Class'
+                        : 'Whole Class (No Batches Required)'}
+                    </option>
+                    {classBatches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
                   </select>
-                )}
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    {classBatches.length === 0
+                      ? 'No batch is needed; students will evaluate at class level.'
+                      : 'You can target all batches or pick a specific batch.'}
+                  </p>
+                </div>
               </div>
 
               {/* Title & Description */}
@@ -555,7 +632,7 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Month 1 Course Feedback or Term-End Faculty Review"
+                    placeholder="e.g. Mid-Term Faculty Evaluation"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                     className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-teal-500"
@@ -569,7 +646,7 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
                     </label>
                     <input
                       type="text"
-                      placeholder="Instructions or focus of this evaluation"
+                      placeholder="Instructions for students"
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
                       className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-teal-500"
@@ -589,60 +666,76 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
                 </div>
               </div>
 
-              {/* Custom Questions Builder */}
+              {/* Question Builder: Only Two Fields Allowed: Multiple Choice & Text Box */}
               <div className="pt-2 border-t border-slate-200 space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-800 uppercase tracking-wide">
-                    Questions ({questions.length})
-                  </span>
+                  <div>
+                    <span className="text-xs font-bold text-slate-800 uppercase tracking-wide">
+                      Questions ({questions.length})
+                    </span>
+                    <span className="text-[11px] text-slate-500 block">
+                      Choose Multiple Choice (with 4 scored options) or Text box
+                    </span>
+                  </div>
 
-                  <div className="flex items-center space-x-1.5">
-                    <button
-                      type="button"
-                      onClick={() => handleAddQuestion('rating')}
-                      className="px-2 py-1 text-xs font-medium bg-teal-50 hover:bg-teal-100 text-teal-800 rounded border border-teal-200"
-                    >
-                      + Rating
-                    </button>
+                  <div className="flex items-center space-x-2">
                     <button
                       type="button"
                       onClick={() => handleAddQuestion('multiple_choice')}
-                      className="px-2 py-1 text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 rounded border border-slate-200"
+                      className="inline-flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-lg border border-teal-200 transition-colors"
                     >
-                      + Options
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>+ Multiple Choice (4 Options)</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => handleAddQuestion('text')}
-                      className="px-2 py-1 text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 rounded border border-slate-200"
+                      className="inline-flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg border border-slate-200 transition-colors"
                     >
-                      + Comment
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>+ Text Box</span>
                     </button>
                   </div>
                 </div>
 
-                <div className="space-y-3">
+                <div className="space-y-4">
                   {questions.map((q, idx) => {
                     const isAssignedToTeacher = Boolean(q.teacherId);
 
                     return (
                       <div
                         key={q.id}
-                        className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2.5"
+                        className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3"
                       >
+                        {/* Question Title & Delete */}
                         <div className="flex items-start justify-between gap-2">
-                          <span className="w-5 h-5 rounded bg-slate-200 text-slate-700 font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">
+                          <span className="w-6 h-6 rounded bg-slate-200 text-slate-700 font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">
                             {idx + 1}
                           </span>
 
-                          <input
-                            type="text"
-                            required
-                            placeholder="Question statement..."
-                            value={q.text}
-                            onChange={(e) => handleUpdateQuestion(q.id, { text: e.target.value })}
-                            className="flex-1 px-2.5 py-1.5 text-xs sm:text-sm border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:ring-2 focus:ring-teal-500"
-                          />
+                          <div className="flex-1 space-y-1">
+                            <input
+                              type="text"
+                              required
+                              placeholder="Question statement (e.g. Faculty subject knowledge & explanation)..."
+                              value={q.text}
+                              onChange={(e) => handleUpdateQuestion(q.id, { text: e.target.value })}
+                              className="w-full px-3 py-2 text-xs sm:text-sm font-medium border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:ring-2 focus:ring-teal-500"
+                            />
+                            <div className="flex items-center space-x-2">
+                              <span
+                                className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
+                                  q.type === 'multiple_choice'
+                                    ? 'bg-blue-100 text-blue-800'
+                                    : 'bg-slate-200 text-slate-700'
+                                }`}
+                              >
+                                {q.type === 'multiple_choice'
+                                  ? 'Multiple Choice (4 Options)'
+                                  : 'Text Box / Written Comment'}
+                              </span>
+                            </div>
+                          </div>
 
                           <button
                             type="button"
@@ -650,128 +743,113 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
                             className="text-slate-400 hover:text-red-500 p-1"
                             title="Delete Question"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
 
-                        {/* Multiple Choice Options Builder */}
+                        {/* Multiple Choice: 4 Options with Individual Marks / Scores */}
                         {q.type === 'multiple_choice' && (
-                          <div className="pl-7 space-y-2 pt-1 border-t border-slate-200/60">
-                            <span className="text-[11px] font-semibold text-slate-600 block">
-                              Options Choices:
-                            </span>
-                            <div className="space-y-1.5">
-                              {(q.options || ['Option A', 'Option B']).map((opt, optIdx) => (
-                                <div key={optIdx} className="flex items-center space-x-1.5">
-                                  <span className="text-[11px] font-mono text-slate-400 w-4 text-center">
-                                    {String.fromCharCode(65 + optIdx)}.
+                          <div className="pl-8 space-y-2.5 pt-2 border-t border-slate-200/60">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] font-bold text-slate-700">
+                                4 Options & Corresponding Marks / Number (Scoring):
+                              </span>
+                              <span className="text-[10px] text-slate-500">
+                                Max Marks:{' '}
+                                <strong className="text-teal-700">
+                                  {Math.max(...(q.options || []).map((o) => o.score || 0), 0)}
+                                </strong>
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {(q.options || []).map((opt, optIdx) => (
+                                <div
+                                  key={opt.id || optIdx}
+                                  className="flex items-center space-x-2 bg-white p-2 rounded-lg border border-slate-200"
+                                >
+                                  <span className="w-5 h-5 rounded-full bg-slate-100 text-slate-700 font-bold text-[11px] flex items-center justify-center shrink-0">
+                                    {String.fromCharCode(65 + optIdx)}
                                   </span>
+
                                   <input
                                     type="text"
-                                    value={opt}
+                                    required
+                                    value={opt.text}
                                     onChange={(e) =>
-                                      handleUpdateOption(q.id, optIdx, e.target.value)
+                                      handleUpdateOption(q.id, optIdx, 'text', e.target.value)
                                     }
-                                    placeholder={`Option ${optIdx + 1}`}
-                                    className="flex-1 px-2 py-1 text-xs border border-slate-300 rounded bg-white"
+                                    placeholder={`Option ${optIdx + 1} text`}
+                                    className="flex-1 px-2 py-1 text-xs border border-slate-300 rounded focus:ring-1 focus:ring-teal-500"
                                   />
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteOption(q.id, optIdx)}
-                                    className="text-slate-400 hover:text-red-500 p-1"
-                                    title="Delete option"
-                                  >
-                                    <X className="w-3 h-3" />
-                                  </button>
+
+                                  <div className="flex items-center space-x-1 shrink-0">
+                                    <span className="text-[10px] text-slate-500 font-medium">Marks:</span>
+                                    <input
+                                      type="number"
+                                      required
+                                      value={opt.score}
+                                      onChange={(e) =>
+                                        handleUpdateOption(q.id, optIdx, 'score', e.target.value)
+                                      }
+                                      className="w-14 px-1.5 py-1 text-xs font-bold text-teal-800 bg-teal-50/50 border border-teal-300 rounded text-center focus:ring-1 focus:ring-teal-500"
+                                    />
+                                  </div>
                                 </div>
                               ))}
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => handleAddOption(q.id)}
-                              className="inline-flex items-center space-x-1 text-xs font-semibold text-teal-700 hover:text-teal-800"
-                            >
-                              <Plus className="w-3 h-3" />
-                              <span>Add Option</span>
-                            </button>
                           </div>
                         )}
 
-                        {/* Controls Bar for this Question */}
-                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs pl-7 pt-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            {/* Question Type */}
-                            <select
-                              value={q.type}
-                              onChange={(e) =>
-                                handleUpdateQuestion(q.id, {
-                                  type: e.target.value as QuestionType,
-                                  scaleMax: e.target.value === 'rating' ? 5 : undefined,
-                                  options: e.target.value === 'multiple_choice' ? ['Option A', 'Option B', 'Option C'] : undefined,
-                                })
-                              }
-                              className="px-2 py-0.5 text-xs border border-slate-300 rounded bg-white text-slate-700 font-medium"
-                            >
-                              <option value="rating">Rating Scale</option>
-                              <option value="multiple_choice">Multiple Choice</option>
-                              <option value="text">Written Text</option>
-                              <option value="yes_no">Yes / No</option>
-                            </select>
+                        {/* Text Box Preview */}
+                        {q.type === 'text' && (
+                          <div className="pl-8 pt-1">
+                            <div className="p-2.5 bg-white border border-slate-200 rounded-lg text-slate-400 text-xs italic">
+                              Students will be provided an open text box for comments, feedback, and notes.
+                            </div>
+                          </div>
+                        )}
 
-                            {/* Rating scale size */}
-                            {q.type === 'rating' && (
+                        {/* Question Options Bar */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs pl-8 pt-1 border-t border-slate-200/50">
+                          {/* Assign Question to Teacher Checkbox & Dropdown */}
+                          <div className="flex items-center space-x-2">
+                            <label className="flex items-center space-x-1.5 text-[11px] font-medium text-slate-700 cursor-pointer bg-white px-2.5 py-1 rounded border border-slate-300">
+                              <input
+                                type="checkbox"
+                                checked={isAssignedToTeacher}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    handleUpdateQuestion(q.id, {
+                                      teacherId: eligibleTeachers[0]?.id || '',
+                                    });
+                                  } else {
+                                    handleUpdateQuestion(q.id, { teacherId: '' });
+                                  }
+                                }}
+                                className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                              />
+                              <span>Assign question to teacher</span>
+                            </label>
+
+                            {isAssignedToTeacher && (
                               <select
-                                value={q.scaleMax || 5}
+                                value={q.teacherId || ''}
                                 onChange={(e) =>
-                                  handleUpdateQuestion(q.id, {
-                                    scaleMax: Number(e.target.value),
-                                  })
+                                  handleUpdateQuestion(q.id, { teacherId: e.target.value })
                                 }
-                                className="px-2 py-0.5 text-xs border border-teal-300 rounded bg-teal-50 text-teal-900 font-bold"
+                                className="px-2 py-1 text-xs border border-amber-300 bg-amber-50 text-amber-900 font-semibold rounded-lg"
                               >
-                                <option value={5}>Scale 1 to 5</option>
-                                <option value={10}>Scale 1 to 10</option>
-                                <option value={3}>Scale 1 to 3</option>
-                              </select>
-                            )}
-
-                            {/* Assign Question to Teacher Checkbox & Dropdown */}
-                            {batchTeachers.length > 0 && (
-                              <div className="flex items-center space-x-1.5 bg-white px-2 py-0.5 rounded border border-slate-300">
-                                <label className="flex items-center space-x-1 text-[11px] font-medium text-slate-700 cursor-pointer">
-                                  <input
-                                    type="checkbox"
-                                    checked={isAssignedToTeacher}
-                                    onChange={(e) => {
-                                      if (e.target.checked) {
-                                        handleUpdateQuestion(q.id, {
-                                          teacherId: batchTeachers[0]?.id || '',
-                                        });
-                                      } else {
-                                        handleUpdateQuestion(q.id, { teacherId: '' });
-                                      }
-                                    }}
-                                    className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                                  />
-                                  <span>Assign to teacher</span>
-                                </label>
-
-                                {isAssignedToTeacher && (
-                                  <select
-                                    value={q.teacherId || ''}
-                                    onChange={(e) =>
-                                      handleUpdateQuestion(q.id, { teacherId: e.target.value })
-                                    }
-                                    className="px-1.5 py-0.5 text-xs border border-amber-300 bg-amber-50 text-amber-900 font-semibold rounded"
-                                  >
-                                    {batchTeachers.map((t) => (
-                                      <option key={t.id} value={t.id}>
-                                        {t.name}
-                                      </option>
-                                    ))}
-                                  </select>
+                                {eligibleTeachers.length === 0 ? (
+                                  <option value="">No teachers available</option>
+                                ) : (
+                                  eligibleTeachers.map((t) => (
+                                    <option key={t.id} value={t.id}>
+                                      {t.name}
+                                    </option>
+                                  ))
                                 )}
-                              </div>
+                              </select>
                             )}
                           </div>
 
@@ -784,7 +862,7 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
                               }
                               className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
                             />
-                            <span>Required</span>
+                            <span>Required Question</span>
                           </label>
                         </div>
                       </div>
@@ -797,7 +875,7 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
             {/* Modal Bottom Actions */}
             <div className="flex items-center justify-between pt-4 border-t border-slate-100 mt-4">
               <span className="text-xs text-slate-400">
-                {questions.length} questions • Single submission enforced
+                {questions.length} questions • Dynamic scoring enabled
               </span>
 
               <div className="flex items-center space-x-2">

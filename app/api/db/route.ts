@@ -66,34 +66,39 @@ export async function GET() {
       : [];
 
     // Query feedback forms
-    const formsRes = db.exec('SELECT * FROM feedback_forms ORDER BY createdAt DESC');
+    const formsRes = db.exec('SELECT id, title, description, batchId, teacherId, questions, status, expiresAt, shareableCode, createdAt, classId FROM feedback_forms ORDER BY createdAt DESC');
     const forms = formsRes.length > 0
       ? formsRes[0].values.map((row) => ({
           id: row[0] as string,
           title: row[1] as string,
           description: row[2] as string,
-          batchId: row[3] as string,
+          batchId: (row[3] as string) || '',
           teacherId: (row[4] as string) || undefined,
           questions: JSON.parse((row[5] as string) || '[]'),
           status: row[6] as 'active' | 'closed',
           expiresAt: (row[7] as string) || undefined,
           shareableCode: row[8] as string,
           createdAt: row[9] as string,
+          classId: (row[10] as string) || '',
         }))
       : [];
 
     // Query feedback responses
-    const responsesRes = db.exec('SELECT id, formId, batchId, studentId, studentName, teacherId, answers, submittedAt FROM feedback_responses ORDER BY submittedAt DESC');
+    const responsesRes = db.exec('SELECT id, formId, batchId, studentId, studentName, teacherId, answers, submittedAt, classId, totalScore, maxPossibleScore, scorePercentage FROM feedback_responses ORDER BY submittedAt DESC');
     const responses = responsesRes.length > 0
       ? responsesRes[0].values.map((row) => ({
           id: row[0] as string,
           formId: row[1] as string,
-          batchId: row[2] as string,
+          batchId: (row[2] as string) || '',
           studentId: row[3] as string,
           studentName: row[4] as string,
           teacherId: (row[5] as string) || undefined,
           answers: JSON.parse((row[6] as string) || '{}'),
           submittedAt: row[7] as string,
+          classId: (row[8] as string) || '',
+          totalScore: Number(row[9]) || 0,
+          maxPossibleScore: Number(row[10]) || 0,
+          scorePercentage: Number(row[11]) || 0,
         }))
       : [];
 
@@ -195,6 +200,31 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: true });
       }
 
+      case 'bulk_add_teachers': {
+        const { teachers: list } = payload;
+        if (Array.isArray(list)) {
+          for (const t of list) {
+            db.run(
+              `INSERT OR REPLACE INTO teachers (id, employeeId, name, email, phone, subjectSpecialization, assignedBatchIds, status, createdAt)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [
+                t.id,
+                t.employeeId || '',
+                t.name,
+                t.email || '',
+                t.phone || '',
+                JSON.stringify(t.subjectSpecialization || []),
+                JSON.stringify(t.assignedBatchIds || []),
+                t.status || 'active',
+                t.createdAt || new Date().toISOString(),
+              ]
+            );
+          }
+          saveDatabase(db);
+        }
+        return NextResponse.json({ success: true, count: list?.length || 0 });
+      }
+
       case 'save_student': {
         const { id, studentId, name, dob, password, hasChangedPassword, batchId, createdAt } = payload;
         db.run(
@@ -247,21 +277,22 @@ export async function POST(req: NextRequest) {
       }
 
       case 'save_form': {
-        const { id, title, description, batchId, teacherId, questions, status, expiresAt, shareableCode, createdAt } = payload;
+        const { id, title, description, classId, batchId, teacherId, questions, status, expiresAt, shareableCode, createdAt } = payload;
         db.run(
-          `INSERT OR REPLACE INTO feedback_forms (id, title, description, batchId, teacherId, questions, status, expiresAt, shareableCode, createdAt)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT OR REPLACE INTO feedback_forms (id, title, description, batchId, teacherId, questions, status, expiresAt, shareableCode, createdAt, classId)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             id,
             title,
             description || '',
-            batchId,
+            batchId || '',
             teacherId || null,
             JSON.stringify(questions || []),
             status || 'active',
             expiresAt || null,
             shareableCode,
             createdAt,
+            classId || '',
           ]
         );
         saveDatabase(db);
@@ -290,8 +321,8 @@ export async function POST(req: NextRequest) {
       }
 
       case 'submit_response': {
-        const { formId, batchId, studentId, studentName, answers, teacherId } = payload;
-        const cleanStudentId = studentId.trim().toUpperCase();
+        const { formId, classId, batchId, studentId, studentName, answers, teacherId, totalScore, maxPossibleScore, scorePercentage } = payload;
+        const cleanStudentId = (studentId || '').trim().toUpperCase();
         const safeTeacherId = teacherId || '';
 
         // Check if student has already submitted for this teacher (or form)
@@ -316,9 +347,22 @@ export async function POST(req: NextRequest) {
         const submittedAt = new Date().toISOString();
 
         db.run(
-          `INSERT INTO feedback_responses (id, formId, batchId, studentId, studentName, teacherId, answers, submittedAt)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          [id, formId, batchId, cleanStudentId, studentName, safeTeacherId, JSON.stringify(answers || {}), submittedAt]
+          `INSERT INTO feedback_responses (id, formId, batchId, studentId, studentName, teacherId, answers, submittedAt, classId, totalScore, maxPossibleScore, scorePercentage)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            id,
+            formId,
+            batchId || '',
+            cleanStudentId,
+            studentName || 'Student',
+            safeTeacherId,
+            JSON.stringify(answers || {}),
+            submittedAt,
+            classId || '',
+            Number(totalScore) || 0,
+            Number(maxPossibleScore) || 0,
+            Number(scorePercentage) || 0,
+          ]
         );
         saveDatabase(db);
         return NextResponse.json({ success: true, id });

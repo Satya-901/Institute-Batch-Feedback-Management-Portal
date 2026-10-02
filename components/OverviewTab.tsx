@@ -232,9 +232,9 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
         ) : (
           <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3.5">
             {activeForms.map((form) => {
+              const cls = classes.find((c) => c.id === form.classId);
               const batch = batches.find((b) => b.id === form.batchId);
               const formResponses = responses.filter((r) => r.formId === form.id);
-              const batchStudents = students.filter((s) => s.batchId === form.batchId);
 
               return (
                 <div
@@ -244,10 +244,10 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                   <div>
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] font-semibold text-teal-800 bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
-                        {batch?.name || 'Batch'}
+                        {cls?.name || 'Class'} {batch ? `• ${batch.name}` : '• Direct'}
                       </span>
                       <span className="text-[10px] text-slate-500 font-mono">
-                        {formResponses.length} / {batchStudents.length} submitted
+                        {formResponses.length} submissions
                       </span>
                     </div>
 
