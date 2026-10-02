@@ -2,6 +2,9 @@ import type {NextConfig} from 'next';
 
 const nextConfig: NextConfig = {
   serverExternalPackages: ['sql.js'],
+  outputFileTracingIncludes: {
+    '/**': ['./data/**/*', './node_modules/sql.js/**/*'],
+  },
   reactStrictMode: true,
   eslint: {
     ignoreDuringBuilds: true,

@@ -1,0 +1,11 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "20"
+  ADMIN_USERNAME = "admin"
+  ADMIN_PASSWORD = "adminpassword123"
+
+[functions]
+  included_files = ["data/**", "node_modules/sql.js/**"]

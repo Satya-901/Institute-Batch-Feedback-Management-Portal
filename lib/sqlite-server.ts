@@ -12,29 +12,71 @@ import {
 } from '@/types';
 
 const require = createRequire(import.meta.url);
-const initSqlJs = require('sql.js');
+
+let sqlLibInstance: any = null;
+
+async function getSqlLib(): Promise<any> {
+  if (sqlLibInstance) return sqlLibInstance;
+
+  try {
+    // 1. Try pure JavaScript / ASM.js version of sql.js (requires NO .wasm binary file, 100% serverless/Netlify compatible)
+    const initSqlAsm = require('sql.js/dist/sql-asm.js');
+    sqlLibInstance = await initSqlAsm();
+    return sqlLibInstance;
+  } catch (err) {
+    console.warn('sql-asm.js could not be loaded, trying sql.js with locateFile:', err);
+  }
+
+  try {
+    const initSqlJs = require('sql.js');
+    sqlLibInstance = await initSqlJs({
+      locateFile: (file: string) => path.join(process.cwd(), 'node_modules', 'sql.js', 'dist', file),
+    });
+    return sqlLibInstance;
+  } catch (err) {
+    console.error('All sql.js initialization methods failed:', err);
+    throw err;
+  }
+}
 
 let dbInstance: Database | null = null;
-const DB_DIR = path.join(process.cwd(), 'data');
-const DB_PATH = path.join(DB_DIR, 'edupulse.sqlite');
+
+function getDbPaths() {
+  const localDbDir = path.join(process.cwd(), 'data');
+  const localDbPath = path.join(localDbDir, 'edupulse.sqlite');
+  const tmpDbDir = '/tmp';
+  const tmpDbPath = path.join(tmpDbDir, 'edupulse.sqlite');
+  return { localDbDir, localDbPath, tmpDbDir, tmpDbPath };
+}
 
 /**
- * Initializes and returns the SQLite database instance from data/edupulse.sqlite
+ * Initializes and returns the SQLite database instance
  */
 export async function getSqliteDb(): Promise<Database> {
   if (dbInstance) return dbInstance;
 
-  const SQL = await initSqlJs({
-    locateFile: (file: string) => path.join(process.cwd(), 'node_modules', 'sql.js', 'dist', file),
-  });
+  const SQL = await getSqlLib();
+  const { localDbDir, localDbPath, tmpDbPath } = getDbPaths();
 
-  if (!fs.existsSync(DB_DIR)) {
-    fs.mkdirSync(DB_DIR, { recursive: true });
+  let fileBuffer: Buffer | null = null;
+  // 1. Check if an updated database exists in /tmp (from previous serverless execution)
+  if (fs.existsSync(tmpDbPath)) {
+    try {
+      fileBuffer = fs.readFileSync(tmpDbPath);
+    } catch {}
   }
 
-  if (fs.existsSync(DB_PATH)) {
+  // 2. Otherwise load the bundled data/edupulse.sqlite
+  if (!fileBuffer && fs.existsSync(localDbPath)) {
     try {
-      const fileBuffer = fs.readFileSync(DB_PATH);
+      fileBuffer = fs.readFileSync(localDbPath);
+    } catch (err) {
+      console.warn('Error reading local sqlite file, creating in-memory:', err);
+    }
+  }
+
+  if (fileBuffer) {
+    try {
       dbInstance = new SQL.Database(fileBuffer);
     } catch (err) {
       console.error('Error loading existing sqlite file, creating new:', err);
@@ -52,18 +94,30 @@ export async function getSqliteDb(): Promise<Database> {
 }
 
 /**
- * Atomically writes the in-memory SQLite database to data/edupulse.sqlite on disk
+ * Persists the in-memory SQLite database to disk (/data/edupulse.sqlite or /tmp/edupulse.sqlite in serverless)
  */
 export function saveDatabase(db: Database): void {
   try {
     const data = db.export();
     const buffer = Buffer.from(data);
-    if (!fs.existsSync(DB_DIR)) {
-      fs.mkdirSync(DB_DIR, { recursive: true });
+    const { localDbDir, localDbPath, tmpDbPath } = getDbPaths();
+
+    // 1. Try local data folder
+    try {
+      if (!fs.existsSync(localDbDir)) {
+        fs.mkdirSync(localDbDir, { recursive: true });
+      }
+      const tempFile = `${localDbPath}.tmp.${Date.now()}`;
+      fs.writeFileSync(tempFile, buffer);
+      fs.renameSync(tempFile, localDbPath);
+    } catch (writeErr) {
+      // Local dir may be read-only in Netlify/Vercel serverless environment
     }
-    const tempFile = `${DB_PATH}.tmp.${Date.now()}`;
-    fs.writeFileSync(tempFile, buffer);
-    fs.renameSync(tempFile, DB_PATH);
+
+    // 2. Also write to /tmp so warm serverless instances retain state
+    try {
+      fs.writeFileSync(tmpDbPath, buffer);
+    } catch {}
   } catch (err) {
     console.error('Failed to save sqlite database to disk:', err);
   }
@@ -181,6 +235,14 @@ function initSchema(db: Database): void {
 
   try {
     db.run('ALTER TABLE batches ADD COLUMN code TEXT;');
+  } catch {}
+
+  try {
+    const defaultPass = process.env.ADMIN_PASSWORD || 'adminpassword123';
+    db.run(
+      'INSERT OR IGNORE INTO admin_user (username, password) VALUES (?, ?);',
+      ['admin', defaultPass]
+    );
   } catch {}
 }
 
