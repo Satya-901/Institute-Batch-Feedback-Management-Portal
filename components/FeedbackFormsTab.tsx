@@ -611,7 +611,7 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
                     </option>
                     {classBatches.map((b) => (
                       <option key={b.id} value={b.id}>
-                        {b.name}
+                        {b.name} {b.code ? `(${b.code})` : ''}
                       </option>
                     ))}
                   </select>

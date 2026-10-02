@@ -1,9 +1,22 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import dynamic from 'next/dynamic';
 import { Navbar } from '@/components/Navbar';
 import { StudentPortal } from '@/components/StudentPortal';
-import { AdminDashboard } from '@/components/AdminDashboard';
+
+const AdminDashboard = dynamic(
+  () => import('@/components/AdminDashboard').then((mod) => mod.AdminDashboard),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-300">
+        <div className="w-8 h-8 border-2 border-teal-500 border-t-transparent rounded-full animate-spin mb-3" />
+        <p className="text-xs font-medium text-slate-400">Loading Dashboard...</p>
+      </div>
+    ),
+  }
+);
 import {
   ClassItem,
   BatchItem,

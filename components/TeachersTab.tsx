@@ -53,6 +53,7 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
   // Bulk Upload Modal state
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [bulkRawText, setBulkRawText] = useState('');
+  const [bulkAssignBatchCodes, setBulkAssignBatchCodes] = useState('');
   const [isProcessingBulk, setIsProcessingBulk] = useState(false);
 
   // Single Form state
@@ -143,6 +144,29 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
     }
   };
 
+  // Resolve comma-separated batch codes or names to batch IDs
+  const resolveBatchCodesToIds = (codesInput: string): string[] => {
+    if (!codesInput) return [];
+    const codes = codesInput
+      .split(/[,;]+/)
+      .map((c) => c.trim().toUpperCase())
+      .filter((c) => c.length > 0);
+
+    const matchedIds: string[] = [];
+    for (const code of codes) {
+      const found = batches.find(
+        (b) =>
+          (b.code && b.code.toUpperCase() === code) ||
+          b.name.toUpperCase() === code ||
+          b.id.toUpperCase() === code
+      );
+      if (found && !matchedIds.includes(found.id)) {
+        matchedIds.push(found.id);
+      }
+    }
+    return matchedIds;
+  };
+
   // Bulk Upload Parsing
   const parsedBulkRows: BulkTeacherRow[] = useMemo(() => {
     if (!bulkRawText.trim()) return [];
@@ -152,33 +176,56 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
       teachers.map((t) => t.employeeId.trim().toUpperCase())
     );
     const seenInInput = new Set<string>();
+    const modalBatchIds = resolveBatchCodesToIds(bulkAssignBatchCodes);
 
     return lines.map((line, idx) => {
-      // Split by comma, tab, or semicolon
-      const parts = line.split(/[,\t;]/).map((p) => p.trim());
+      // Split by comma, tab, or semicolon with quote handling
+      const parts: string[] = [];
+      let cur = '';
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (char === '"') {
+          inQuotes = !inQuotes;
+        } else if ((char === ',' || char === '\t' || char === ';') && !inQuotes) {
+          parts.push(cur.trim());
+          cur = '';
+        } else {
+          cur += char;
+        }
+      }
+      parts.push(cur.trim());
 
-      // Format can be: EmployeeId, Name, Email, Phone, Subjects
-      // or: Name, Email, Phone, Subjects, EmployeeId
       let empId = '';
       let teacherName = '';
       let teacherEmail = '';
       let teacherPhone = '';
       let subjects = '';
+      let rowBatchCodes = '';
 
-      if (parts.length >= 2) {
+      if (parts.length >= 6) {
+        empId = parts[0];
+        teacherName = parts[1];
+        teacherEmail = parts[2] || '';
+        teacherPhone = parts[3] || '';
+        subjects = parts[4] || 'General Academics';
+        rowBatchCodes = parts[5] || '';
+      } else if (parts.length >= 2) {
         // If first part looks like EMP ID
         if (/^[a-zA-Z0-9\-_]{3,15}$/.test(parts[0]) && !parts[0].includes(' ') && parts.length > 2) {
           empId = parts[0];
           teacherName = parts[1];
           teacherEmail = parts[2] || '';
           teacherPhone = parts[3] || '';
-          subjects = parts.slice(4).join(', ') || 'General Academics';
+          subjects = parts[4] || 'General Academics';
+          rowBatchCodes = parts[5] || '';
         } else {
           teacherName = parts[0];
           teacherEmail = parts[1] || '';
           teacherPhone = parts[2] || '';
           subjects = parts[3] || 'General Academics';
           empId = parts[4] || `EMP-${100 + idx}`;
+          rowBatchCodes = parts[5] || '';
         }
       } else {
         teacherName = parts[0];
@@ -189,7 +236,9 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
       // Check header row
       if (
         teacherName.toLowerCase() === 'name' ||
+        teacherName.toLowerCase() === 'faculty name' ||
         empId.toLowerCase() === 'employeeid' ||
+        empId.toLowerCase() === 'employee id' ||
         empId.toLowerCase() === 'emp id'
       ) {
         return {
@@ -198,6 +247,8 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
           email: '',
           phone: '',
           subjects: '',
+          batchCodes: '',
+          assignedBatchIds: [],
           isValid: false,
           error: 'Header line skipped',
         };
@@ -210,6 +261,8 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
           email: teacherEmail,
           phone: teacherPhone,
           subjects,
+          batchCodes: '',
+          assignedBatchIds: [],
           isValid: false,
           error: 'Missing faculty name',
         };
@@ -223,6 +276,8 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
           email: teacherEmail,
           phone: teacherPhone,
           subjects,
+          batchCodes: rowBatchCodes,
+          assignedBatchIds: [],
           isValid: false,
           error: `Duplicate Employee ID "${cleanEmpId}" already exists`,
         };
@@ -235,6 +290,8 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
           email: teacherEmail,
           phone: teacherPhone,
           subjects,
+          batchCodes: rowBatchCodes,
+          assignedBatchIds: [],
           isValid: false,
           error: 'Duplicate ID in current batch',
         };
@@ -242,16 +299,21 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
 
       seenInInput.add(cleanEmpId);
 
+      const rowSpecificBatchIds = resolveBatchCodesToIds(rowBatchCodes);
+      const combinedBatchIds = Array.from(new Set([...modalBatchIds, ...rowSpecificBatchIds]));
+
       return {
         employeeId: cleanEmpId,
         name: teacherName,
         email: teacherEmail || `${teacherName.toLowerCase().replace(/\s+/g, '.')}@institution.edu`,
         phone: teacherPhone || '+91 98000 00000',
-        subjects,
+        subjects: subjects || 'General Academics',
+        batchCodes: [bulkAssignBatchCodes, rowBatchCodes].filter(Boolean).join(', '),
+        assignedBatchIds: combinedBatchIds,
         isValid: true,
       };
     });
-  }, [bulkRawText, teachers]);
+  }, [bulkRawText, bulkAssignBatchCodes, teachers, batches]);
 
   const validBulkRows = useMemo(() => {
     return parsedBulkRows.filter((r) => r.isValid);
@@ -261,11 +323,11 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
     const csvContent =
       'data:text/csv;charset=utf-8,' +
       [
-        'Employee ID,Faculty Name,Email,Phone,Subject Specialization',
-        'EMP-101,Dr. Amit Verma,amit.verma@college.edu,+91 98765 43210,Physics',
-        'EMP-102,Prof. Sneha Roy,sneha.roy@college.edu,+91 98765 43211,Mathematics',
-        'EMP-103,Dr. Rajesh Gupta,rajesh.gupta@college.edu,+91 98765 43212,Chemistry',
-        'EMP-104,Ms. Pooja Nair,pooja.nair@college.edu,+91 98765 43213,Computer Science',
+        'Employee ID,Faculty Name,Email,Phone,Subject Specialization,Batch Codes',
+        'EMP-101,Dr. Amit Verma,amit.verma@college.edu,+91 98765 43210,Physics,N11-A',
+        'EMP-102,Prof. Sneha Roy,sneha.roy@college.edu,+91 98765 43211,Mathematics,"N11-A, N12-A"',
+        'EMP-103,Dr. Rajesh Gupta,rajesh.gupta@college.edu,+91 98765 43212,Chemistry,N11-B',
+        'EMP-104,Ms. Pooja Nair,pooja.nair@college.edu,+91 98765 43213,Biology,N12-B',
       ].join('\n');
 
     const encodedUri = encodeURI(csvContent);
@@ -308,7 +370,7 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
       subjectSpecialization: r.subjects
         ? r.subjects.split(',').map((s) => s.trim()).filter(Boolean)
         : ['General Academics'],
-      assignedBatchIds: [],
+      assignedBatchIds: r.assignedBatchIds || [],
       status: 'active',
       createdAt: new Date().toISOString(),
     }));
@@ -320,6 +382,7 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
     );
 
     setBulkRawText('');
+    setBulkAssignBatchCodes('');
     setShowBulkModal(false);
     onDataChanged();
   };
@@ -594,7 +657,7 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
                                     : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
                                 }`}
                               >
-                                <span>{b.name}</span>
+                                <span>{b.name} {b.code ? `(${b.code})` : ''}</span>
                                 {isChecked ? (
                                   <CheckSquare className="w-4 h-4 text-teal-700 shrink-0" />
                                 ) : (
@@ -639,7 +702,7 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
                 <div>
                   <h3 className="font-bold text-slate-900 text-base">Bulk Import Faculty Roster</h3>
                   <p className="text-xs text-slate-500">
-                    Paste lines from CSV / Excel or upload a file. Format: EmployeeId, Name, Email, Phone, Subjects
+                    Paste lines or upload CSV. Format: EmployeeId, Name, Email, Phone, Subjects, BatchCodes
                   </p>
                 </div>
                 <button
@@ -677,6 +740,68 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
                 </span>
               </div>
 
+              {/* Assign to Batches Input */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                  <label className="text-xs font-bold text-slate-800 flex items-center space-x-1.5">
+                    <Layers className="w-4 h-4 text-teal-600" />
+                    <span>Assign to Batches (Optional):</span>
+                  </label>
+                  <span className="text-[11px] text-slate-500">
+                    Type comma-separated batch codes (e.g. N11-A, N12-A)
+                  </span>
+                </div>
+                <input
+                  type="text"
+                  placeholder="Enter batch codes with commas (e.g. N11-A, N12-A)"
+                  value={bulkAssignBatchCodes}
+                  onChange={(e) => setBulkAssignBatchCodes(e.target.value)}
+                  className="w-full px-3 py-2 text-xs font-mono uppercase border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:ring-2 focus:ring-teal-500"
+                />
+
+                {/* Available Batches Pills for easy 1-click toggling */}
+                {batches.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                    <span className="text-[10px] text-slate-500 font-semibold">Available Batches:</span>
+                    {batches.map((b) => {
+                      const codeDisplay = b.code || b.name;
+                      const currentCodes = bulkAssignBatchCodes
+                        .split(/[,;]+/)
+                        .map((c) => c.trim().toUpperCase())
+                        .filter(Boolean);
+                      const isSelected = currentCodes.includes(codeDisplay.toUpperCase());
+
+                      return (
+                        <button
+                          key={b.id}
+                          type="button"
+                          onClick={() => {
+                            if (isSelected) {
+                              const filtered = currentCodes.filter(
+                                (c) => c !== codeDisplay.toUpperCase()
+                              );
+                              setBulkAssignBatchCodes(filtered.join(', '));
+                            } else {
+                              setBulkAssignBatchCodes(
+                                [...currentCodes, codeDisplay].join(', ')
+                              );
+                            }
+                          }}
+                          className={`text-[10px] px-2 py-0.5 rounded font-mono font-semibold transition-colors cursor-pointer ${
+                            isSelected
+                              ? 'bg-teal-600 text-white shadow-2xs'
+                              : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-300'
+                          }`}
+                        >
+                          {isSelected ? '✓ ' : '+ '}
+                          {b.code ? `${b.code} (${b.name})` : b.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
                   Paste Faculty Rows (One per line)
@@ -685,7 +810,7 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
                   rows={5}
                   value={bulkRawText}
                   onChange={(e) => setBulkRawText(e.target.value)}
-                  placeholder="Paste CSV lines (EmployeeId, Name, Email, Phone, Subjects) or upload CSV file above"
+                  placeholder="Paste CSV lines (EmployeeId, Name, Email, Phone, Subjects, BatchCodes) or upload CSV file above"
                   className="w-full p-3 font-mono text-xs border border-slate-300 rounded-xl bg-white focus:outline-hidden focus:ring-2 focus:ring-teal-500"
                 />
               </div>
@@ -708,6 +833,7 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
                           <th className="px-3 py-1.5">Name</th>
                           <th className="px-3 py-1.5">Email</th>
                           <th className="px-3 py-1.5">Subjects</th>
+                          <th className="px-3 py-1.5">Assigned Batches</th>
                           <th className="px-3 py-1.5">Status</th>
                         </tr>
                       </thead>
@@ -718,6 +844,25 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
                             <td className="px-3 py-1.5 font-medium text-slate-800">{row.name}</td>
                             <td className="px-3 py-1.5 text-slate-500">{row.email}</td>
                             <td className="px-3 py-1.5 text-slate-600">{row.subjects}</td>
+                            <td className="px-3 py-1.5">
+                              {row.assignedBatchIds && row.assignedBatchIds.length > 0 ? (
+                                <div className="flex flex-wrap gap-1">
+                                  {row.assignedBatchIds.map((bid) => {
+                                    const b = batches.find((x) => x.id === bid);
+                                    return (
+                                      <span
+                                        key={bid}
+                                        className="px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 text-[10px] font-mono font-semibold border border-teal-200"
+                                      >
+                                        {b?.code || b?.name || bid}
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              ) : (
+                                <span className="text-slate-400 italic text-[11px]">None</span>
+                              )}
+                            </td>
                             <td className="px-3 py-1.5">
                               {row.isValid ? (
                                 <span className="inline-flex items-center space-x-1 text-emerald-700 text-[11px] font-semibold">

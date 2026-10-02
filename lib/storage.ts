@@ -10,33 +10,47 @@ import {
 } from '@/types';
 
 const STORAGE_KEYS = {
-  CLASSES: 'edupulse_classes_v2',
-  BATCHES: 'edupulse_batches_v2',
-  TEACHERS: 'edupulse_teachers_v2',
-  STUDENTS: 'edupulse_students_v2',
-  FORMS: 'edupulse_forms_v2',
-  RESPONSES: 'edupulse_responses_v2',
   ADMIN_LOGGED_IN: 'edupulse_admin_auth',
+  STUDENT_LOCAL_PROFILE: 'edupulse_saved_student_profile',
 };
 
-// Generic Helpers
-const getParsed = <T>(key: string, defaultValue: T): T => {
-  if (typeof window === 'undefined') return defaultValue;
+// In-memory runtime cache for client performance (Zero database storage in browser localStorage)
+let clientStore: {
+  classes: ClassItem[];
+  batches: BatchItem[];
+  teachers: TeacherItem[];
+  students: StudentItem[];
+  forms: FeedbackForm[];
+  responses: FeedbackResponse[];
+} = {
+  classes: [],
+  batches: [],
+  teachers: [],
+  students: [],
+  forms: [],
+  responses: [],
+};
+
+// Wipe legacy database keys from browser localStorage if they exist
+if (typeof window !== 'undefined') {
   try {
-    const val = localStorage.getItem(key);
-    return val ? JSON.parse(val) : defaultValue;
+    [
+      'edupulse_classes_v2',
+      'edupulse_batches_v2',
+      'edupulse_teachers_v2',
+      'edupulse_students_v2',
+      'edupulse_forms_v2',
+      'edupulse_responses_v2',
+    ].forEach((k) => localStorage.removeItem(k));
   } catch {
-    return defaultValue;
+    // Ignore in non-browser environments
   }
-};
+}
 
-const setParsed = <T>(key: string, value: T): void => {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem(key, JSON.stringify(value));
-};
-
-// Sync with Server JSON File backend
-export async function syncFromServer(): Promise<{
+/**
+ * Synchronize client memory directly with the server SQLite database file
+ */
+export async function syncFromSqlite(): Promise<{
   classes: ClassItem[];
   batches: BatchItem[];
   teachers: TeacherItem[];
@@ -51,31 +65,25 @@ export async function syncFromServer(): Promise<{
     });
     if (res.ok) {
       const data = await res.json();
-      setParsed(STORAGE_KEYS.CLASSES, data.classes || []);
-      setParsed(STORAGE_KEYS.BATCHES, data.batches || []);
-      setParsed(STORAGE_KEYS.TEACHERS, data.teachers || []);
-      setParsed(STORAGE_KEYS.STUDENTS, data.students || []);
-      setParsed(STORAGE_KEYS.FORMS, data.forms || []);
-      setParsed(STORAGE_KEYS.RESPONSES, data.responses || []);
-      return data;
+      clientStore = {
+        classes: data.classes || [],
+        batches: data.batches || [],
+        teachers: data.teachers || [],
+        students: data.students || [],
+        forms: data.forms || [],
+        responses: data.responses || [],
+      };
+      return clientStore;
     }
   } catch (err) {
-    console.warn('Could not sync from server file API, using cached state:', err);
+    console.warn('Could not sync from server SQLite API:', err);
   }
-  return {
-    classes: getClasses(),
-    batches: getBatches(),
-    teachers: getTeachers(),
-    students: getStudents(),
-    forms: getFeedbackForms(),
-    responses: getResponses(),
-  };
+  return clientStore;
 }
 
-// Backwards compatibility alias
-export const syncFromSqlite = syncFromServer;
+export const syncFromServer = syncFromSqlite;
 
-async function callServerDb(action: string, payload: any) {
+async function callSqlite(action: string, payload: any) {
   try {
     const res = await fetch('/api/db', {
       method: 'POST',
@@ -84,26 +92,32 @@ async function callServerDb(action: string, payload: any) {
     });
     return await res.json();
   } catch (err) {
-    console.warn('Server file DB API call failed:', err);
+    console.warn('Server SQLite DB API call failed:', err);
     return null;
   }
 }
 
-// Backwards compatibility alias
-const callSqlite = callServerDb;
+// ---------------------------------------------------------------------------
+// Admin Authentication (Session only in cookie & storage, NO passwords)
+// ---------------------------------------------------------------------------
 
-// Admin Authentication
 export const isAdminLoggedIn = (): boolean => {
   if (typeof window === 'undefined') return false;
-  return localStorage.getItem(STORAGE_KEYS.ADMIN_LOGGED_IN) === 'true';
+  const localVal = localStorage.getItem(STORAGE_KEYS.ADMIN_LOGGED_IN) === 'true';
+  const cookieVal =
+    typeof document !== 'undefined' &&
+    document.cookie.includes(`${STORAGE_KEYS.ADMIN_LOGGED_IN}=true`);
+  return localVal || cookieVal;
 };
 
 export const setAdminLoggedIn = (status: boolean) => {
   if (typeof window === 'undefined') return;
   if (status) {
     localStorage.setItem(STORAGE_KEYS.ADMIN_LOGGED_IN, 'true');
+    document.cookie = `${STORAGE_KEYS.ADMIN_LOGGED_IN}=true; path=/; max-age=2592000; SameSite=Lax`;
   } else {
     localStorage.removeItem(STORAGE_KEYS.ADMIN_LOGGED_IN);
+    document.cookie = `${STORAGE_KEYS.ADMIN_LOGGED_IN}=; path=/; max-age=0; SameSite=Lax`;
   }
 };
 
@@ -113,24 +127,6 @@ export const checkAdminCredentials = async (
 ): Promise<boolean> => {
   const cleanUser = (username || '').trim().toLowerCase();
   const cleanPass = (password || '').trim();
-
-  // Instant fallback for standard admin credentials so admin is never locked out
-  if (cleanUser === 'admin' && (cleanPass === 'admin123' || cleanPass === 'admin')) {
-    setAdminLoggedIn(true);
-    try {
-      fetch('/api/db', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'admin_login',
-          payload: { username: cleanUser, password: cleanPass },
-        }),
-      }).catch(() => {});
-    } catch {
-      // Ignore background notification error
-    }
-    return true;
-  }
 
   try {
     const res = await fetch('/api/db', {
@@ -142,8 +138,11 @@ export const checkAdminCredentials = async (
       }),
     });
     if (res.ok) {
-      setAdminLoggedIn(true);
-      return true;
+      const data = await res.json();
+      if (data && data.success) {
+        setAdminLoggedIn(true);
+        return true;
+      }
     }
   } catch (err) {
     console.warn('Backend admin login call failed:', err);
@@ -151,80 +150,83 @@ export const checkAdminCredentials = async (
   return false;
 };
 
-// Classes (NO DUMMY DATA: starts empty [])
-export const getClasses = (): ClassItem[] => getParsed<ClassItem[]>(STORAGE_KEYS.CLASSES, []);
+// ---------------------------------------------------------------------------
+// Classes Operations (Server SQLite)
+// ---------------------------------------------------------------------------
+
+export const getClasses = (): ClassItem[] => clientStore.classes;
+
 export const saveClass = (cls: ClassItem) => {
-  const list = getClasses();
-  const index = list.findIndex((c) => c.id === cls.id);
+  const index = clientStore.classes.findIndex((c) => c.id === cls.id);
   if (index >= 0) {
-    list[index] = cls;
+    clientStore.classes[index] = cls;
   } else {
-    list.unshift(cls);
+    clientStore.classes.unshift(cls);
   }
-  setParsed(STORAGE_KEYS.CLASSES, list);
   callSqlite('save_class', cls);
 };
 
 export const deleteClass = (id: string) => {
-  const list = getClasses().filter((c) => c.id !== id);
-  setParsed(STORAGE_KEYS.CLASSES, list);
-  const batches = getBatches().filter((b) => b.classId !== id);
-  setParsed(STORAGE_KEYS.BATCHES, batches);
+  clientStore.classes = clientStore.classes.filter((c) => c.id !== id);
+  clientStore.batches = clientStore.batches.filter((b) => b.classId !== id);
   callSqlite('delete_class', { id });
 };
 
-// Batches (NO DUMMY DATA: starts empty [])
-export const getBatches = (): BatchItem[] => getParsed<BatchItem[]>(STORAGE_KEYS.BATCHES, []);
+// ---------------------------------------------------------------------------
+// Batches Operations (Server SQLite)
+// ---------------------------------------------------------------------------
+
+export const getBatches = (): BatchItem[] => clientStore.batches;
+
 export const saveBatch = (batch: BatchItem) => {
-  const list = getBatches();
-  const index = list.findIndex((b) => b.id === batch.id);
+  const index = clientStore.batches.findIndex((b) => b.id === batch.id);
   if (index >= 0) {
-    list[index] = batch;
+    clientStore.batches[index] = batch;
   } else {
-    list.unshift(batch);
+    clientStore.batches.unshift(batch);
   }
-  setParsed(STORAGE_KEYS.BATCHES, list);
   callSqlite('save_batch', batch);
 };
 
 export const deleteBatch = (id: string) => {
-  const list = getBatches().filter((b) => b.id !== id);
-  setParsed(STORAGE_KEYS.BATCHES, list);
+  clientStore.batches = clientStore.batches.filter((b) => b.id !== id);
   callSqlite('delete_batch', { id });
 };
 
-// Teachers (NO DUMMY DATA: starts empty [])
-export const getTeachers = (): TeacherItem[] => getParsed<TeacherItem[]>(STORAGE_KEYS.TEACHERS, []);
+// ---------------------------------------------------------------------------
+// Teachers Operations (Server SQLite)
+// ---------------------------------------------------------------------------
+
+export const getTeachers = (): TeacherItem[] => clientStore.teachers;
+
 export const saveTeacher = (teacher: TeacherItem) => {
-  const list = getTeachers();
-  const index = list.findIndex((t) => t.id === teacher.id);
+  const index = clientStore.teachers.findIndex((t) => t.id === teacher.id);
   if (index >= 0) {
-    list[index] = teacher;
+    clientStore.teachers[index] = teacher;
   } else {
-    list.unshift(teacher);
+    clientStore.teachers.unshift(teacher);
   }
-  setParsed(STORAGE_KEYS.TEACHERS, list);
   callSqlite('save_teacher', teacher);
 };
 
 export const deleteTeacher = (id: string) => {
-  const list = getTeachers().filter((t) => t.id !== id);
-  setParsed(STORAGE_KEYS.TEACHERS, list);
+  clientStore.teachers = clientStore.teachers.filter((t) => t.id !== id);
   callSqlite('delete_teacher', { id });
 };
 
 export const bulkAddTeachers = (
   newTeachers: TeacherItem[]
 ): { addedCount: number; duplicateCount: number } => {
-  const current = getTeachers();
   const existingIds = new Set(
-    current.map((t) => (t.employeeId ? t.employeeId.trim().toUpperCase() : t.name.trim().toUpperCase()))
+    clientStore.teachers.map((t) =>
+      t.employeeId ? t.employeeId.trim().toUpperCase() : t.name.trim().toUpperCase()
+    )
   );
   const validToAdd: TeacherItem[] = [];
   let duplicates = 0;
 
   for (const t of newTeachers) {
-    const key = (t.employeeId ? t.employeeId.trim().toUpperCase() : t.name.trim().toUpperCase());
+    const key = t.employeeId ? t.employeeId.trim().toUpperCase() : t.name.trim().toUpperCase();
     if (existingIds.has(key)) {
       duplicates++;
     } else {
@@ -234,16 +236,16 @@ export const bulkAddTeachers = (
   }
 
   if (validToAdd.length > 0) {
-    const updated = [...validToAdd, ...current];
-    setParsed(STORAGE_KEYS.TEACHERS, updated);
+    clientStore.teachers = [...validToAdd, ...clientStore.teachers];
     callSqlite('bulk_add_teachers', { teachers: validToAdd });
   }
 
   return { addedCount: validToAdd.length, duplicateCount: duplicates };
 };
 
-// Saved student local profile (so on next teacher evaluation student doesn't re-enter info)
-const STUDENT_LOCAL_PROFILE_KEY = 'edupulse_saved_student_profile';
+// ---------------------------------------------------------------------------
+// Student Session Profile (Student form convenience)
+// ---------------------------------------------------------------------------
 
 export interface SavedStudentProfile {
   studentId: string;
@@ -255,7 +257,7 @@ export interface SavedStudentProfile {
 export const getSavedStudentProfile = (): SavedStudentProfile | null => {
   if (typeof window === 'undefined') return null;
   try {
-    const val = localStorage.getItem(STUDENT_LOCAL_PROFILE_KEY);
+    const val = localStorage.getItem(STORAGE_KEYS.STUDENT_LOCAL_PROFILE);
     return val ? JSON.parse(val) : null;
   } catch {
     return null;
@@ -265,31 +267,36 @@ export const getSavedStudentProfile = (): SavedStudentProfile | null => {
 export const setSavedStudentProfile = (profile: SavedStudentProfile): void => {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(STUDENT_LOCAL_PROFILE_KEY, JSON.stringify(profile));
+    localStorage.setItem(STORAGE_KEYS.STUDENT_LOCAL_PROFILE, JSON.stringify(profile));
   } catch {
     // Ignore error
   }
 };
 
-// Students (NO DUMMY DATA: starts empty [])
-export const getStudents = (): StudentItem[] => getParsed<StudentItem[]>(STORAGE_KEYS.STUDENTS, []);
+// ---------------------------------------------------------------------------
+// Students Operations (Server SQLite)
+// ---------------------------------------------------------------------------
+
+export const getStudents = (): StudentItem[] => clientStore.students;
+
 export const saveStudent = (student: StudentItem) => {
-  const list = getStudents();
-  const index = list.findIndex((s) => s.id === student.id || s.studentId === student.studentId);
+  const index = clientStore.students.findIndex(
+    (s) => s.id === student.id || s.studentId === student.studentId
+  );
   if (index >= 0) {
-    list[index] = student;
+    clientStore.students[index] = student;
   } else {
-    list.unshift(student);
+    clientStore.students.unshift(student);
   }
-  setParsed(STORAGE_KEYS.STUDENTS, list);
   callSqlite('save_student', student);
 };
 
 export const bulkAddStudents = (
   newStudents: StudentItem[]
 ): { addedCount: number; duplicateCount: number } => {
-  const current = getStudents();
-  const existingIds = new Set(current.map((s) => s.studentId.trim().toUpperCase()));
+  const existingIds = new Set(
+    clientStore.students.map((s) => s.studentId.trim().toUpperCase())
+  );
   const validToAdd: StudentItem[] = [];
   let duplicates = 0;
 
@@ -299,15 +306,12 @@ export const bulkAddStudents = (
       duplicates++;
     } else {
       existingIds.add(cleanId);
-      validToAdd.push({
-        ...s,
-        studentId: cleanId,
-      });
+      validToAdd.push({ ...s, studentId: cleanId });
     }
   }
 
   if (validToAdd.length > 0) {
-    setParsed(STORAGE_KEYS.STUDENTS, [...validToAdd, ...current]);
+    clientStore.students = [...validToAdd, ...clientStore.students];
     callSqlite('bulk_add_students', { students: validToAdd });
   }
 
@@ -315,44 +319,45 @@ export const bulkAddStudents = (
 };
 
 export const deleteStudent = (id: string) => {
-  const list = getStudents().filter((s) => s.id !== id && s.studentId !== id);
-  setParsed(STORAGE_KEYS.STUDENTS, list);
+  clientStore.students = clientStore.students.filter(
+    (s) => s.id !== id && s.studentId !== id
+  );
   callSqlite('delete_student', { id });
 };
 
 export const updateStudentPassword = (studentId: string, newPassword: string): boolean => {
-  const list = getStudents();
-  const index = list.findIndex((s) => s.studentId.toUpperCase() === studentId.trim().toUpperCase());
+  const index = clientStore.students.findIndex(
+    (s) => s.studentId.toUpperCase() === studentId.trim().toUpperCase()
+  );
   if (index >= 0) {
-    list[index].password = newPassword;
-    list[index].hasChangedPassword = true;
-    setParsed(STORAGE_KEYS.STUDENTS, list);
+    clientStore.students[index].password = newPassword;
+    clientStore.students[index].hasChangedPassword = true;
     callSqlite('update_student_password', { studentId, newPassword });
     return true;
   }
   return false;
 };
 
-// Feedback Forms (NO DUMMY DATA: starts empty [])
-export const getFeedbackForms = (): FeedbackForm[] => getParsed<FeedbackForm[]>(STORAGE_KEYS.FORMS, []);
+// ---------------------------------------------------------------------------
+// Feedback Forms Operations (Server SQLite)
+// ---------------------------------------------------------------------------
+
+export const getFeedbackForms = (): FeedbackForm[] => clientStore.forms;
+
 export const saveFeedbackForm = (form: FeedbackForm) => {
-  const list = getFeedbackForms();
-  const index = list.findIndex((f) => f.id === form.id);
+  const index = clientStore.forms.findIndex((f) => f.id === form.id);
   if (index >= 0) {
-    list[index] = form;
+    clientStore.forms[index] = form;
   } else {
-    list.unshift(form);
+    clientStore.forms.unshift(form);
   }
-  setParsed(STORAGE_KEYS.FORMS, list);
   callSqlite('save_form', form);
 };
 
 export const toggleFeedbackFormStatus = (id: string): 'active' | 'closed' => {
-  const list = getFeedbackForms();
-  const item = list.find((f) => f.id === id);
+  const item = clientStore.forms.find((f) => f.id === id);
   if (item) {
     item.status = item.status === 'active' ? 'closed' : 'active';
-    setParsed(STORAGE_KEYS.FORMS, list);
     callSqlite('toggle_form_status', { id });
     return item.status;
   }
@@ -360,40 +365,52 @@ export const toggleFeedbackFormStatus = (id: string): 'active' | 'closed' => {
 };
 
 export const deleteFeedbackForm = (id: string) => {
-  const list = getFeedbackForms().filter((f) => f.id !== id);
-  setParsed(STORAGE_KEYS.FORMS, list);
+  clientStore.forms = clientStore.forms.filter((f) => f.id !== id);
   callSqlite('delete_form', { id });
 };
 
-// Feedback Responses (NO DUMMY DATA: starts empty [])
-export const getResponses = (): FeedbackResponse[] => getParsed<FeedbackResponse[]>(STORAGE_KEYS.RESPONSES, []);
+// ---------------------------------------------------------------------------
+// Feedback Responses Operations (Server SQLite)
+// ---------------------------------------------------------------------------
 
-export const hasStudentSubmitted = (formId: string, studentId: string, teacherId?: string): boolean => {
-  const responses = getResponses();
+export const getResponses = (): FeedbackResponse[] => clientStore.responses;
+
+export const hasStudentSubmitted = (
+  formId: string,
+  studentId: string,
+  teacherId?: string
+): boolean => {
   const cleanStudentId = studentId.trim().toUpperCase();
   if (teacherId) {
-    return responses.some(
+    return clientStore.responses.some(
       (r) =>
         r.formId === formId &&
         r.studentId.toUpperCase() === cleanStudentId &&
         r.teacherId === teacherId
     );
   }
-  return responses.some((r) => r.formId === formId && r.studentId.toUpperCase() === cleanStudentId);
+  return clientStore.responses.some(
+    (r) => r.formId === formId && r.studentId.toUpperCase() === cleanStudentId
+  );
 };
 
-export const getStudentResponse = (formId: string, studentId: string, teacherId?: string): FeedbackResponse | undefined => {
-  const responses = getResponses();
+export const getStudentResponse = (
+  formId: string,
+  studentId: string,
+  teacherId?: string
+): FeedbackResponse | undefined => {
   const cleanStudentId = studentId.trim().toUpperCase();
   if (teacherId) {
-    return responses.find(
+    return clientStore.responses.find(
       (r) =>
         r.formId === formId &&
         r.studentId.toUpperCase() === cleanStudentId &&
         r.teacherId === teacherId
     );
   }
-  return responses.find((r) => r.formId === formId && r.studentId.toUpperCase() === cleanStudentId);
+  return clientStore.responses.find(
+    (r) => r.formId === formId && r.studentId.toUpperCase() === cleanStudentId
+  );
 };
 
 export const submitFeedbackResponse = (
@@ -414,9 +431,7 @@ export const submitFeedbackResponse = (
     submittedAt: new Date().toISOString(),
   };
 
-  const list = getResponses();
-  list.unshift(newResponse);
-  setParsed(STORAGE_KEYS.RESPONSES, list);
+  clientStore.responses.unshift(newResponse);
   callSqlite('submit_response', newResponse);
 
   return {
@@ -427,12 +442,13 @@ export const submitFeedbackResponse = (
 };
 
 export const clearAllData = () => {
-  if (typeof window === 'undefined') return;
-  setParsed(STORAGE_KEYS.CLASSES, []);
-  setParsed(STORAGE_KEYS.BATCHES, []);
-  setParsed(STORAGE_KEYS.TEACHERS, []);
-  setParsed(STORAGE_KEYS.STUDENTS, []);
-  setParsed(STORAGE_KEYS.FORMS, []);
-  setParsed(STORAGE_KEYS.RESPONSES, []);
+  clientStore = {
+    classes: [],
+    batches: [],
+    teachers: [],
+    students: [],
+    forms: [],
+    responses: [],
+  };
   callSqlite('clear_all_data', {});
 };

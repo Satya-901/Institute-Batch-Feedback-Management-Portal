@@ -34,7 +34,47 @@ import {
   setAdminLoggedIn,
 } from '@/lib/storage';
 
-export const AdminDashboard: React.FC = () => {
+interface AdminDashboardProps {
+  initialTab?: ActiveTab;
+}
+
+const VALID_TABS_MAP: Record<string, ActiveTab> = {
+  overview: 'overview',
+  classes: 'classes',
+  batches: 'classes',
+  teachers: 'teachers',
+  faculty: 'teachers',
+  students: 'students',
+  feedback: 'feedback',
+  forms: 'feedback',
+  reports: 'reports',
+};
+
+const resolveTab = (initial?: ActiveTab): ActiveTab => {
+  if (initial && VALID_TABS_MAP[initial]) {
+    return VALID_TABS_MAP[initial];
+  }
+  if (typeof window !== 'undefined') {
+    const path = window.location.pathname;
+    const match = path.match(/^\/admin\/([a-zA-Z0-9_-]+)/);
+    if (match && match[1] && VALID_TABS_MAP[match[1].toLowerCase()]) {
+      return VALID_TABS_MAP[match[1].toLowerCase()];
+    }
+    const param = new URLSearchParams(window.location.search).get('tab');
+    if (param && VALID_TABS_MAP[param.toLowerCase()]) {
+      return VALID_TABS_MAP[param.toLowerCase()];
+    }
+    const saved = localStorage.getItem('edupulse_admin_active_tab');
+    if (saved && VALID_TABS_MAP[saved.toLowerCase()]) {
+      return VALID_TABS_MAP[saved.toLowerCase()];
+    }
+  }
+  return 'overview';
+};
+
+export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialTab }) => {
+  const [mounted, setMounted] = useState<boolean>(false);
+
   // Admin authentication state
   const [isAdmin, setIsAdmin] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -43,7 +83,36 @@ export const AdminDashboard: React.FC = () => {
     return false;
   });
 
-  const [activeTab, setActiveTab] = useState<ActiveTab>('overview');
+  // Active Tab state persisted via clean URL paths (/admin/feedback) and localStorage
+  const [activeTab, setActiveTabState] = useState<ActiveTab>(() => resolveTab(initialTab));
+
+  const setActiveTab = useCallback((tab: ActiveTab) => {
+    setActiveTabState(tab);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('edupulse_admin_active_tab', tab);
+      const targetUrl = tab === 'overview' ? '/admin' : `/admin/${tab}`;
+      if (window.location.pathname !== targetUrl) {
+        window.history.pushState(null, '', targetUrl);
+      }
+    }
+  }, []);
+
+  // Sync prop changes if route changes externally
+  useEffect(() => {
+    if (initialTab && initialTab !== activeTab) {
+      setActiveTabState(initialTab);
+    }
+  }, [initialTab]);
+
+  // Support browser Back/Forward buttons
+  useEffect(() => {
+    const handlePopState = () => {
+      const current = resolveTab();
+      setActiveTabState(current);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   // Application Data States (Zero dummy data, loaded from SQLite)
   const [classes, setClasses] = useState<ClassItem[]>(() => getClasses());
@@ -73,6 +142,20 @@ export const AdminDashboard: React.FC = () => {
 
   // Initial sync from Server on mount & auto-sync across devices
   useEffect(() => {
+    setMounted(true);
+    const loggedIn = isAdminLoggedIn();
+    setIsAdmin(loggedIn);
+
+    const currentTab = resolveTab(initialTab);
+    setActiveTabState(currentTab);
+    if (typeof window !== 'undefined' && loggedIn) {
+      const targetUrl = currentTab === 'overview' ? '/admin' : `/admin/${currentTab}`;
+      // Clean up legacy ?tab= query parameter if present
+      if (window.location.search.includes('tab=')) {
+        window.history.replaceState(null, '', targetUrl);
+      }
+    }
+
     let ignore = false;
     syncFromSqlite().then((data) => {
       if (!ignore) {
@@ -104,12 +187,16 @@ export const AdminDashboard: React.FC = () => {
       window.removeEventListener('focus', handleFocus);
       clearInterval(interval);
     };
-  }, [refreshData]);
+  }, [refreshData, initialTab]);
 
   // Logout handler
   const handleLogout = () => {
     setAdminLoggedIn(false);
     setIsAdmin(false);
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('edupulse_admin_active_tab');
+      window.history.replaceState(null, '', '/admin');
+    }
   };
 
   // Quick Action Handler from Sidebar / Overview
@@ -140,6 +227,16 @@ export const AdminDashboard: React.FC = () => {
     setCurrentStudentForPreview(student);
     setAdminPreviewFormId(forms.find((f) => f.batchId === student.batchId)?.id || forms[0]?.id || null);
   };
+
+  // Prevent flash of login screen before client mount has determined auth
+  if (!mounted && !isAdmin) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-300">
+        <div className="w-8 h-8 border-2 border-teal-500 border-t-transparent rounded-full animate-spin mb-3" />
+        <p className="text-xs font-medium text-slate-400">Loading Dashboard...</p>
+      </div>
+    );
+  }
 
   // If Admin is NOT logged in, show Admin Login (NO visible credentials on screen)
   if (!isAdmin) {

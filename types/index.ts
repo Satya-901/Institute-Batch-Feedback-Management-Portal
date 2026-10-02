@@ -12,12 +12,14 @@ export interface BatchItem {
   id: string;
   classId: string;
   name: string;
+  code?: string;
   timing: string;
   roomNumber?: string;
   maxCapacity: number;
   academicYear: string;
   createdAt: string;
 }
+
 
 export interface TeacherItem {
   id: string;
@@ -104,6 +106,9 @@ export interface BulkTeacherRow {
   email: string;
   phone: string;
   subjects: string;
+  batchCodes?: string;
+  assignedBatchIds?: string[];
   isValid: boolean;
   error?: string;
 }
+

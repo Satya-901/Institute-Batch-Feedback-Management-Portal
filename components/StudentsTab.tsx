@@ -472,7 +472,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                     const c = classes.find((cl) => cl.id === b.classId);
                     return (
                       <option key={b.id} value={b.id}>
-                        {b.name} ({c?.code || 'Class'})
+                        {b.name} {b.code ? `(${b.code})` : ''} - {c?.code || 'Class'}
                       </option>
                     );
                   })}
@@ -536,7 +536,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                     >
                       {batches.map((b) => (
                         <option key={b.id} value={b.id}>
-                          {b.name}
+                          {b.name} {b.code ? `(${b.code})` : ''}
                         </option>
                       ))}
                     </select>
