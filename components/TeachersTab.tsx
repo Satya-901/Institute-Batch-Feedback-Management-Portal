@@ -505,7 +505,7 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Dr. Ramesh Gupta"
+                  placeholder="Enter faculty full name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-teal-500"
@@ -519,7 +519,7 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
                   </label>
                   <input
                     type="text"
-                    placeholder="EMP-101"
+                    placeholder="Enter employee ID or code"
                     value={employeeId}
                     onChange={(e) => setEmployeeId(e.target.value)}
                     className="w-full px-3 py-2 text-xs sm:text-sm font-mono border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-teal-500"
@@ -531,7 +531,7 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
                   </label>
                   <input
                     type="text"
-                    placeholder="+91 98765 43210"
+                    placeholder="Enter contact phone number"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
                     className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-teal-500"
@@ -545,7 +545,7 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
                 </label>
                 <input
                   type="email"
-                  placeholder="faculty@college.edu"
+                  placeholder="Enter official email address"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-teal-500"
@@ -558,7 +558,7 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
                 </label>
                 <input
                   type="text"
-                  placeholder="Physics, Applied Mechanics, Quantum Theory"
+                  placeholder="Enter teaching subjects, separated by commas"
                   value={subjectsInput}
                   onChange={(e) => setSubjectsInput(e.target.value)}
                   className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-teal-500"
@@ -685,7 +685,7 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
                   rows={5}
                   value={bulkRawText}
                   onChange={(e) => setBulkRawText(e.target.value)}
-                  placeholder={`EMP-101, Dr. Amit Verma, amit.verma@college.edu, +91 98765 43210, Physics\nEMP-102, Prof. Sneha Roy, sneha.roy@college.edu, +91 98765 43211, Mathematics`}
+                  placeholder="Paste CSV lines (EmployeeId, Name, Email, Phone, Subjects) or upload CSV file above"
                   className="w-full p-3 font-mono text-xs border border-slate-300 rounded-xl bg-white focus:outline-hidden focus:ring-2 focus:ring-teal-500"
                 />
               </div>

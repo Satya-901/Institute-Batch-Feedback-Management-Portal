@@ -46,12 +46,6 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Right Controls */}
           <div className="flex items-center space-x-3">
-            {/* SQLite Status Tag */}
-            <div className="hidden sm:flex items-center space-x-1.5 px-2.5 py-1 bg-slate-800/80 rounded-md text-[11px] text-teal-400 border border-slate-700/60 font-mono">
-              <Database className="w-3 h-3 text-teal-400" />
-              <span>.sqlite</span>
-            </div>
-
             {isAdmin && !studentMode ? (
               <div className="flex items-center space-x-2">
                 <span className="hidden md:inline-flex items-center space-x-1 text-xs text-slate-300 bg-slate-800 px-2.5 py-1 rounded-md border border-slate-700">

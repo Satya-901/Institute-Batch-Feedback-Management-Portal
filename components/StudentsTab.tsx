@@ -281,7 +281,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Search by student ID (e.g. STU101) or full name..."
+            placeholder="Search by student ID or full name..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-9 pr-3 py-1.5 text-xs sm:text-sm border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-teal-500"
@@ -421,7 +421,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                 <input
                   type="text"
                   required
-                  placeholder="e.g. STU115 or REG-2026-401"
+                  placeholder="Enter student ID or roll number"
                   value={singleId}
                   onChange={(e) => setSingleId(e.target.value)}
                   className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg uppercase font-mono focus:outline-hidden focus:ring-2 focus:ring-teal-500"
@@ -435,7 +435,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Aarav Sharma"
+                  placeholder="Enter student full name"
                   value={singleName}
                   onChange={(e) => setSingleName(e.target.value)}
                   className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-teal-500"
@@ -444,7 +444,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Date of Birth (Initial Password) *
+                  Date of Birth *
                 </label>
                 <input
                   type="date"
@@ -454,7 +454,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                   className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-teal-500"
                 />
                 <p className="text-[11px] text-slate-500 mt-1">
-                  Student will use this date of birth (e.g. {singleDob || 'YYYY-MM-DD'}) to log in for the first time.
+                  Student date of birth for institutional records.
                 </p>
               </div>
 
@@ -561,7 +561,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                     rows={5}
                     value={bulkRawText}
                     onChange={(e) => setBulkRawText(e.target.value)}
-                    placeholder={`STU-201, Rohan Sharma, 2006-04-12\nSTU-202, Priya Verma, 2006-08-25\nSTU-203, Devendra Patel, 2006-01-30`}
+                    placeholder="Paste CSV lines (StudentID, Name, DateOfBirth) or upload file above"
                     className="w-full px-3 py-2 text-xs font-mono border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-amber-500"
                   />
                 </div>

@@ -1,0 +1,78 @@
+{
+  "classes": [
+    {
+      "id": "cls-1790846452905",
+      "name": "Class 11",
+      "code": "11",
+      "department": "Academic Wing",
+      "academicYear": "2026-2027",
+      "createdAt": "2026-10-01T09:20:52.905Z"
+    }
+  ],
+  "batches": [
+    {
+      "id": "batch-1790846631389",
+      "classId": "cls-1790846452905",
+      "name": "Batch 11 One",
+      "timing": "09:00 AM - 02:00 PM",
+      "roomNumber": "Hall 201",
+      "maxCapacity": 50,
+      "academicYear": "2026-2027",
+      "createdAt": "2026-10-01T09:23:51.389Z"
+    }
+  ],
+  "teachers": [],
+  "students": [],
+  "forms": [
+    {
+      "id": "fb-form-1790848408532",
+      "title": "Academic Term Feedback & Faculty Evaluation",
+      "description": "Evaluate course delivery, practical doubts, and faculty support.",
+      "batchId": "batch-1790846631389",
+      "questions": [
+        {
+          "id": "q-1",
+          "text": "Clarity of theoretical explanations and subject knowledge",
+          "type": "rating",
+          "scaleMax": 5,
+          "scaleLabels": {
+            "min": "Needs Improvement",
+            "max": "Excellent"
+          },
+          "required": true,
+          "teacherId": ""
+        },
+        {
+          "id": "q-2",
+          "text": "Teacher engagement, problem-solving support, and approachability",
+          "type": "rating",
+          "scaleMax": 5,
+          "scaleLabels": {
+            "min": "Poor",
+            "max": "Outstanding"
+          },
+          "required": true,
+          "teacherId": ""
+        },
+        {
+          "id": "q-3",
+          "text": "Suggestions or areas where you need additional academic support",
+          "type": "text",
+          "required": false,
+          "teacherId": ""
+        }
+      ],
+      "status": "active",
+      "expiresAt": "2026-12-31",
+      "shareableCode": "BAT-558",
+      "createdAt": "2026-10-01T09:53:28.532Z",
+      "classId": "cls-1790846452905"
+    }
+  ],
+  "responses": [],
+  "admin": {
+    "username": "admin",
+    "password": "admin123"
+  },
+  "lastUpdated": "2026-10-02T08:55:51.084Z"
+}

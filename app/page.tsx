@@ -65,7 +65,7 @@ export default function HomePage() {
     return null;
   });
 
-  // Synchronize data from SQLite
+  // Synchronize data from Server File
   const refreshData = useCallback(async () => {
     const data = await syncFromSqlite();
     setClasses(data.classes);
@@ -88,10 +88,28 @@ export default function HomePage() {
         setResponses(data.responses);
       }
     });
+
+    // Auto-refresh when tab gains focus or on interval so other device updates appear immediately
+    const handleFocus = () => {
+      refreshData();
+    };
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') refreshData();
+    });
+
+    const interval = setInterval(() => {
+      if (!ignore && document.visibilityState === 'visible') {
+        refreshData();
+      }
+    }, 12000);
+
     return () => {
       ignore = true;
+      window.removeEventListener('focus', handleFocus);
+      clearInterval(interval);
     };
-  }, []);
+  }, [refreshData]);
 
   // Target form matching shareable link code
   const targetFormId = useMemo(() => {
@@ -104,7 +122,7 @@ export default function HomePage() {
   if (!isClient) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white text-sm">
-        Loading SQLite Database...
+        Loading Institutional Portal...
       </div>
     );
   }

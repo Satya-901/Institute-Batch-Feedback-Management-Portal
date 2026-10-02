@@ -185,9 +185,9 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-3 text-slate-600">
             <Database className="w-6 h-6 text-teal-600" />
           </div>
-          <h2 className="text-base font-bold text-slate-800">Your Database is Ready</h2>
+          <h2 className="text-base font-bold text-slate-800">Your Institutional Database is Ready</h2>
           <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto mb-5">
-            All data is saved in local <code>.sqlite</code> file. Get started by setting up your first class and batch.
+            All records are synchronized directly to your server database. Get started by setting up your first class and batch.
           </p>
           <div className="flex flex-wrap justify-center gap-2.5">
             <button

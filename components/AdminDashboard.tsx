@@ -60,7 +60,7 @@ export const AdminDashboard: React.FC = () => {
   // Quick action batch preselection for feedback creation
   const [initialBatchIdForForm, setInitialBatchIdForForm] = useState<string | null>(null);
 
-  // Synchronize from SQLite backend
+  // Synchronize from Server File backend
   const refreshData = useCallback(async () => {
     const data = await syncFromSqlite();
     setClasses(data.classes);
@@ -71,7 +71,7 @@ export const AdminDashboard: React.FC = () => {
     setResponses(data.responses);
   }, []);
 
-  // Initial sync from SQLite on mount
+  // Initial sync from Server on mount & auto-sync across devices
   useEffect(() => {
     let ignore = false;
     syncFromSqlite().then((data) => {
@@ -84,10 +84,27 @@ export const AdminDashboard: React.FC = () => {
         setResponses(data.responses);
       }
     });
+
+    const handleFocus = () => {
+      refreshData();
+    };
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') refreshData();
+    });
+
+    const interval = setInterval(() => {
+      if (!ignore && document.visibilityState === 'visible') {
+        refreshData();
+      }
+    }, 10000);
+
     return () => {
       ignore = true;
+      window.removeEventListener('focus', handleFocus);
+      clearInterval(interval);
     };
-  }, []);
+  }, [refreshData]);
 
   // Logout handler
   const handleLogout = () => {

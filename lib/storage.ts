@@ -35,8 +35,8 @@ const setParsed = <T>(key: string, value: T): void => {
   localStorage.setItem(key, JSON.stringify(value));
 };
 
-// Sync with SQLite backend
-export async function syncFromSqlite(): Promise<{
+// Sync with Server JSON File backend
+export async function syncFromServer(): Promise<{
   classes: ClassItem[];
   batches: BatchItem[];
   teachers: TeacherItem[];
@@ -45,7 +45,10 @@ export async function syncFromSqlite(): Promise<{
   responses: FeedbackResponse[];
 }> {
   try {
-    const res = await fetch('/api/db');
+    const res = await fetch(`/api/db?t=${Date.now()}`, {
+      cache: 'no-store',
+      headers: { 'Cache-Control': 'no-cache' },
+    });
     if (res.ok) {
       const data = await res.json();
       setParsed(STORAGE_KEYS.CLASSES, data.classes || []);
@@ -57,7 +60,7 @@ export async function syncFromSqlite(): Promise<{
       return data;
     }
   } catch (err) {
-    console.warn('Could not sync from SQLite API, using local state:', err);
+    console.warn('Could not sync from server file API, using cached state:', err);
   }
   return {
     classes: getClasses(),
@@ -69,17 +72,25 @@ export async function syncFromSqlite(): Promise<{
   };
 }
 
-async function callSqlite(action: string, payload: any) {
+// Backwards compatibility alias
+export const syncFromSqlite = syncFromServer;
+
+async function callServerDb(action: string, payload: any) {
   try {
-    await fetch('/api/db', {
+    const res = await fetch('/api/db', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action, payload }),
     });
+    return await res.json();
   } catch (err) {
-    console.warn('SQLite API call failed:', err);
+    console.warn('Server file DB API call failed:', err);
+    return null;
   }
 }
+
+// Backwards compatibility alias
+const callSqlite = callServerDb;
 
 // Admin Authentication
 export const isAdminLoggedIn = (): boolean => {

@@ -391,7 +391,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
               <input
                 type="text"
                 required
-                placeholder="e.g. STU101"
+                placeholder="Enter Student Roll No. or ID"
                 value={studentId}
                 onChange={(e) => setStudentId(e.target.value.toUpperCase())}
                 className="w-full px-3 py-2 text-xs sm:text-sm font-mono uppercase border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:ring-2 focus:ring-teal-500"
@@ -406,7 +406,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
               <input
                 type="text"
                 required
-                placeholder="e.g. Rahul Sharma"
+                placeholder="Enter Student Full Name"
                 value={studentName}
                 onChange={(e) => setStudentName(e.target.value)}
                 className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:ring-2 focus:ring-teal-500"

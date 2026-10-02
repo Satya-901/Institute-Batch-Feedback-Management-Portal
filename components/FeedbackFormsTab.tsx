@@ -93,9 +93,9 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
 
   const [selectedClassId, setSelectedClassId] = useState<string>(initialClassId);
   const [selectedBatchId, setSelectedBatchId] = useState<string>(initialBatchIdToCreate || 'all');
-  const [title, setTitle] = useState('Academic Term Feedback & Faculty Evaluation');
-  const [description, setDescription] = useState('Evaluate course delivery, subject knowledge, and faculty support.');
-  const [expiresAt, setExpiresAt] = useState('2026-12-31');
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [expiresAt, setExpiresAt] = useState('');
 
   // Custom questions (Default 2 Multiple Choice with 4 options and scores, plus 1 Text box)
   const [questions, setQuestions] = useState<FeedbackQuestion[]>([
@@ -117,17 +117,17 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
       text: 'Punctuality, syllabus coverage and doubt-solving support',
       type: 'multiple_choice',
       options: [
-        { id: 'opt-2-1', text: 'Always on time & very helpful', score: 10 },
+        { id: 'opt-2-1', text: 'Consistently punctual & supportive', score: 10 },
         { id: 'opt-2-2', text: 'Regular & clears doubts', score: 8 },
         { id: 'opt-2-3', text: 'Average support', score: 5 },
-        { id: 'opt-2-4', text: 'Needs significant improvement', score: 2 },
+        { id: 'opt-2-4', text: 'Needs improvement', score: 2 },
       ],
       required: true,
       teacherId: '',
     },
     {
       id: 'q-3',
-      text: 'Suggestions or specific comments for improvement (Optional)',
+      text: 'Additional feedback or suggestions for faculty improvement',
       type: 'text',
       required: false,
       teacherId: '',
@@ -184,9 +184,9 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
 
     setSelectedClassId(targetClass);
     setSelectedBatchId(targetBatch);
-    setTitle('Academic Term Feedback & Faculty Evaluation');
-    setDescription('Evaluate course delivery, subject knowledge, and faculty support.');
-    setExpiresAt('2026-12-31');
+    setTitle('');
+    setDescription('');
+    setExpiresAt('');
     setShowCreateModal(true);
   };
 
@@ -204,10 +204,10 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
       options:
         type === 'multiple_choice'
           ? [
-              { id: 'opt-1', text: 'Option A (Excellent)', score: 10 },
-              { id: 'opt-2', text: 'Option B (Good)', score: 8 },
-              { id: 'opt-3', text: 'Option C (Average)', score: 5 },
-              { id: 'opt-4', text: 'Option D (Poor)', score: 2 },
+              { id: 'opt-1', text: 'Excellent', score: 10 },
+              { id: 'opt-2', text: 'Good', score: 8 },
+              { id: 'opt-3', text: 'Average', score: 5 },
+              { id: 'opt-4', text: 'Poor', score: 2 },
             ]
           : undefined,
       required: true,
@@ -632,7 +632,7 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Mid-Term Faculty Evaluation"
+                    placeholder="Enter feedback form title"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                     className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-teal-500"
@@ -646,7 +646,7 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
                     </label>
                     <input
                       type="text"
-                      placeholder="Instructions for students"
+                      placeholder="Student evaluation instructions or guidelines"
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
                       className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-teal-500"
@@ -717,7 +717,7 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
                             <input
                               type="text"
                               required
-                              placeholder="Question statement (e.g. Faculty subject knowledge & explanation)..."
+                              placeholder="Evaluation question or criterion statement..."
                               value={q.text}
                               onChange={(e) => handleUpdateQuestion(q.id, { text: e.target.value })}
                               className="w-full px-3 py-2 text-xs sm:text-sm font-medium border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:ring-2 focus:ring-teal-500"
@@ -779,7 +779,7 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
                                     onChange={(e) =>
                                       handleUpdateOption(q.id, optIdx, 'text', e.target.value)
                                     }
-                                    placeholder={`Option ${optIdx + 1} text`}
+                                    placeholder={`Option ${optIdx + 1} description`}
                                     className="flex-1 px-2 py-1 text-xs border border-slate-300 rounded focus:ring-1 focus:ring-teal-500"
                                   />
 

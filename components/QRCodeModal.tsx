@@ -63,37 +63,7 @@ export const QRCodeModal: React.FC<QRCodeModalProps> = ({
   };
 
   const handlePrint = () => {
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>${formTitle} - QR Code</title>
-          <style>
-            body { font-family: system-ui, sans-serif; text-align: center; padding: 40px; color: #0f172a; }
-            .box { max-width: 400px; margin: 0 auto; border: 2px dashed #cbd5e1; padding: 30px; border-radius: 16px; }
-            h2 { margin: 0 0 8px; font-size: 20px; }
-            p { margin: 4px 0 20px; color: #64748b; font-size: 13px; }
-            img { width: 240px; height: 240px; }
-            .badge { display: inline-block; background: #f1f5f9; padding: 4px 12px; border-radius: 6px; font-family: monospace; font-size: 14px; margin-top: 15px; font-weight: bold; }
-          </style>
-        </head>
-        <body>
-          <div class="box">
-            <h2>${formTitle}</h2>
-            <p>${batchName ? `Batch: ${batchName}` : 'Student Feedback Evaluation'}</p>
-            <img src="${qrDataUrl}" alt="QR Code" />
-            <div>
-              <span class="badge">Code: ${shareableCode}</span>
-            </div>
-            <p style="margin-top: 16px; font-size: 12px; color: #94a3b8;">Scan with any camera or QR scanner to submit your feedback.</p>
-          </div>
-          <script>window.onload = () => { window.print(); window.close(); }</script>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
+    window.print();
   };
 
   return (

@@ -202,7 +202,7 @@ export const ClassesBatchesTab: React.FC<ClassesBatchesTabProps> = ({
           <Layers className="w-10 h-10 text-slate-300 mx-auto mb-2" />
           <p className="text-sm font-semibold text-slate-700">No classes configured</p>
           <p className="text-xs text-slate-500 mt-1 mb-4">
-            Add a class (e.g. Class 10, Class 12, B.Tech) to start grouping batches.
+            Create an academic class or course to organize student batches and evaluations.
           </p>
           <button
             onClick={handleOpenClassModal}
@@ -345,7 +345,7 @@ export const ClassesBatchesTab: React.FC<ClassesBatchesTabProps> = ({
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Class 11 - Science or B.Sc Physics"
+                  placeholder="Enter class or programme name"
                   value={className}
                   onChange={(e) => setClassName(e.target.value)}
                   className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-teal-500"
@@ -360,7 +360,7 @@ export const ClassesBatchesTab: React.FC<ClassesBatchesTabProps> = ({
                   <input
                     type="text"
                     required
-                    placeholder="e.g. XI-SCI"
+                    placeholder="Enter class code"
                     value={classCode}
                     onChange={(e) => setClassCode(e.target.value)}
                     className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg uppercase focus:outline-hidden focus:ring-2 focus:ring-teal-500"
@@ -385,7 +385,7 @@ export const ClassesBatchesTab: React.FC<ClassesBatchesTabProps> = ({
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Senior Secondary Wing / School of Engineering"
+                  placeholder="Enter department or academic wing"
                   value={department}
                   onChange={(e) => setDepartment(e.target.value)}
                   className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-teal-500"
@@ -398,7 +398,7 @@ export const ClassesBatchesTab: React.FC<ClassesBatchesTabProps> = ({
                 </label>
                 <textarea
                   rows={2}
-                  placeholder="Optional brief description of syllabus and scope"
+                  placeholder="Enter brief description of syllabus or academic notes"
                   value={classDesc}
                   onChange={(e) => setClassDesc(e.target.value)}
                   className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-teal-500"
@@ -468,7 +468,7 @@ export const ClassesBatchesTab: React.FC<ClassesBatchesTabProps> = ({
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Batch 12-A Morning or Section Alpha"
+                  placeholder="Enter batch or section name"
                   value={batchName}
                   onChange={(e) => setBatchName(e.target.value)}
                   className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-teal-500"
@@ -482,7 +482,7 @@ export const ClassesBatchesTab: React.FC<ClassesBatchesTabProps> = ({
                   </label>
                   <input
                     type="text"
-                    placeholder="e.g. 08:00 AM - 01:30 PM"
+                    placeholder="Enter timing or shift hours"
                     value={timing}
                     onChange={(e) => setTiming(e.target.value)}
                     className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-teal-500"
@@ -494,7 +494,7 @@ export const ClassesBatchesTab: React.FC<ClassesBatchesTabProps> = ({
                   </label>
                   <input
                     type="text"
-                    placeholder="e.g. Hall 301"
+                    placeholder="Enter hall or room number"
                     value={roomNumber}
                     onChange={(e) => setRoomNumber(e.target.value)}
                     className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-teal-500"

@@ -158,5 +158,5 @@ export const confirmAction = async (options: {
     });
     return result.isConfirmed;
   }
-  return typeof window !== 'undefined' ? window.confirm(options.title) : false;
+  return true;
 };
