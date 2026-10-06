@@ -1,25 +1,37 @@
 /**
- * SQLite Database Module
- * Server-side SQLite persistence powered by lib/sqlite-server.ts
+ * Unified SQL Database Module
+ * Primary: MySQL / phpMyAdmin localhost
+ * Hot Standby / Fallback: Server SQLite
  */
+import {
+  getAllData,
+  getActiveDatabaseInfo,
+  isMysqlConnected,
+} from './db-manager';
+
 import {
   getSqliteDb,
   saveDatabase,
-  getAllData,
-  getActiveDatabaseInfo,
 } from './sqlite-server';
 
-export { getSqliteDb, saveDatabase, getAllData, getActiveDatabaseInfo };
+export {
+  getAllData,
+  getActiveDatabaseInfo,
+  isMysqlConnected,
+  getSqliteDb,
+  saveDatabase,
+};
 
 export async function getDatabase(): Promise<any> {
   return await getAllData();
 }
 
 const sqlDatabase = {
-  getSqliteDb,
-  saveDatabase,
   getAllData,
   getActiveDatabaseInfo,
+  isMysqlConnected,
+  getSqliteDb,
+  saveDatabase,
   getDatabase,
 };
 

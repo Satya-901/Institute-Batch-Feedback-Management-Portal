@@ -1,30 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   getAllData,
-  sqliteSaveClass,
-  sqliteDeleteClass,
-  sqliteSaveBatch,
-  sqliteDeleteBatch,
-  sqliteSaveTeacher,
-  sqliteDeleteTeacher,
-  sqliteBulkAddTeachers,
-  sqliteSaveStudent,
-  sqliteBulkAddStudents,
-  sqliteDeleteStudent,
-  sqliteUpdateStudentPassword,
-  sqliteSaveFeedbackForm,
-  sqliteToggleFeedbackFormStatus,
-  sqliteDeleteFeedbackForm,
-  sqliteSubmitFeedbackResponse,
-  sqliteClearAllData,
-  getSqliteDb,
-} from '@/lib/sqlite-server';
+  saveClass,
+  deleteClass,
+  saveBatch,
+  deleteBatch,
+  saveTeacher,
+  deleteTeacher,
+  bulkAddTeachers,
+  saveStudent,
+  bulkAddStudents,
+  deleteStudent,
+  updateStudentPassword,
+  saveFeedbackForm,
+  toggleFeedbackFormStatus,
+  deleteFeedbackForm,
+  submitFeedbackResponse,
+  clearAllData,
+  checkAdminLogin,
+} from '@/lib/db-manager';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 /**
- * GET /api/db - Fetches all current institute data directly from server SQLite database
+ * GET /api/db - Fetches all current institute data
+ * Uses MySQL if available, falls back to SQLite automatically
  */
 export async function GET() {
   try {
@@ -35,13 +36,13 @@ export async function GET() {
       },
     });
   } catch (err: any) {
-    console.error('Server SQLite DB GET Error:', err);
+    console.error('Database GET Error:', err);
     return NextResponse.json({ error: err.message || 'Failed to fetch database' }, { status: 500 });
   }
 }
 
 /**
- * POST /api/db - Modifies data directly in the server SQLite database file
+ * POST /api/db - Modifies data directly in MySQL with dual-write to SQLite fallback
  */
 export async function POST(req: NextRequest) {
   try {
@@ -51,32 +52,9 @@ export async function POST(req: NextRequest) {
     switch (action) {
       case 'admin_login': {
         const { username, password } = payload || {};
-        const cleanUser = (username || '').trim().toLowerCase();
-        const cleanPass = (password || '').trim();
-        const envUser = (process.env.ADMIN_USERNAME || 'admin').trim().toLowerCase();
-        const envPass = (process.env.ADMIN_PASSWORD || 'adminpassword123').trim();
+        const isAuth = await checkAdminLogin(username, password);
 
-        // 1. Check environment variables
-        const isEnvMatch = Boolean(cleanUser === envUser && cleanPass === envPass);
-
-        // 2. Also check SQLite admin_user table safely
-        let isDbMatch = false;
-        try {
-          const db = await getSqliteDb();
-          const stmt = db.prepare('SELECT password FROM admin_user WHERE LOWER(username) = ?');
-          stmt.bind([cleanUser]);
-          if (stmt.step()) {
-            const row = stmt.getAsObject() as { password?: string };
-            if (row.password && row.password === cleanPass) {
-              isDbMatch = true;
-            }
-          }
-          stmt.free();
-        } catch (dbErr) {
-          console.warn('DB check for admin skipped/failed:', dbErr);
-        }
-
-        if (isEnvMatch || isDbMatch) {
+        if (isAuth) {
           return NextResponse.json({ success: true });
         }
         return NextResponse.json(
@@ -86,77 +64,77 @@ export async function POST(req: NextRequest) {
       }
 
       case 'save_class': {
-        await sqliteSaveClass(payload);
+        await saveClass(payload);
         return NextResponse.json({ success: true });
       }
 
       case 'delete_class': {
-        await sqliteDeleteClass(payload.id);
+        await deleteClass(payload.id);
         return NextResponse.json({ success: true });
       }
 
       case 'save_batch': {
-        await sqliteSaveBatch(payload);
+        await saveBatch(payload);
         return NextResponse.json({ success: true });
       }
 
       case 'delete_batch': {
-        await sqliteDeleteBatch(payload.id);
+        await deleteBatch(payload.id);
         return NextResponse.json({ success: true });
       }
 
       case 'save_teacher': {
-        await sqliteSaveTeacher(payload);
+        await saveTeacher(payload);
         return NextResponse.json({ success: true });
       }
 
       case 'delete_teacher': {
-        await sqliteDeleteTeacher(payload.id);
+        await deleteTeacher(payload.id);
         return NextResponse.json({ success: true });
       }
 
       case 'bulk_add_teachers': {
-        const result = await sqliteBulkAddTeachers(payload.teachers || []);
+        const result = await bulkAddTeachers(payload.teachers || []);
         return NextResponse.json({ success: true, ...result });
       }
 
       case 'save_student': {
-        await sqliteSaveStudent(payload);
+        await saveStudent(payload);
         return NextResponse.json({ success: true });
       }
 
       case 'bulk_add_students': {
-        const result = await sqliteBulkAddStudents(payload.students || []);
+        const result = await bulkAddStudents(payload.students || []);
         return NextResponse.json({ success: true, ...result });
       }
 
       case 'delete_student': {
-        await sqliteDeleteStudent(payload.id);
+        await deleteStudent(payload.id);
         return NextResponse.json({ success: true });
       }
 
       case 'update_student_password': {
-        const ok = await sqliteUpdateStudentPassword(payload.studentId, payload.newPassword);
+        const ok = await updateStudentPassword(payload.studentId, payload.newPassword);
         return NextResponse.json({ success: ok });
       }
 
       case 'save_form': {
-        await sqliteSaveFeedbackForm(payload);
+        await saveFeedbackForm(payload);
         return NextResponse.json({ success: true });
       }
 
       case 'toggle_form_status': {
-        const status = await sqliteToggleFeedbackFormStatus(payload.id);
+        const status = await toggleFeedbackFormStatus(payload.id);
         return NextResponse.json({ success: true, status });
       }
 
       case 'delete_form': {
-        await sqliteDeleteFeedbackForm(payload.id);
+        await deleteFeedbackForm(payload.id);
         return NextResponse.json({ success: true });
       }
 
       case 'submit_response': {
-        const result = await sqliteSubmitFeedbackResponse(payload);
+        const result = await submitFeedbackResponse(payload);
         if (!result.success) {
           return NextResponse.json(result, { status: 409 });
         }
@@ -164,7 +142,7 @@ export async function POST(req: NextRequest) {
       }
 
       case 'clear_all_data': {
-        await sqliteClearAllData();
+        await clearAllData();
         return NextResponse.json({ success: true });
       }
 
@@ -172,7 +150,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
     }
   } catch (err: any) {
-    console.error('Server SQLite DB POST Error:', err);
+    console.error('Database POST Error:', err);
     return NextResponse.json({ error: err.message || 'Operation failed' }, { status: 500 });
   }
 }
