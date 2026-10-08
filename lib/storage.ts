@@ -7,6 +7,7 @@ import {
   StudentItem,
   FeedbackForm,
   FeedbackResponse,
+  FormTemplate,
 } from '@/types';
 
 const STORAGE_KEYS = {
@@ -22,6 +23,7 @@ let clientStore: {
   students: StudentItem[];
   forms: FeedbackForm[];
   responses: FeedbackResponse[];
+  templates: FormTemplate[];
 } = {
   classes: [],
   batches: [],
@@ -29,6 +31,7 @@ let clientStore: {
   students: [],
   forms: [],
   responses: [],
+  templates: [],
 };
 
 // Wipe legacy database keys from browser localStorage if they exist
@@ -57,6 +60,7 @@ export async function syncFromSqlite(): Promise<{
   students: StudentItem[];
   forms: FeedbackForm[];
   responses: FeedbackResponse[];
+  templates: FormTemplate[];
 }> {
   try {
     const res = await fetch(`/api/db?t=${Date.now()}`, {
@@ -72,6 +76,7 @@ export async function syncFromSqlite(): Promise<{
         students: data.students || [],
         forms: data.forms || [],
         responses: data.responses || [],
+        templates: data.templates || [],
       };
       return clientStore;
     }
@@ -441,6 +446,27 @@ export const submitFeedbackResponse = (
   };
 };
 
+// ---------------------------------------------------------------------------
+// Form Template Operations (Question-only reusable templates)
+// ---------------------------------------------------------------------------
+
+export const getFormTemplates = (): FormTemplate[] => clientStore.templates || [];
+
+export const saveFormTemplate = (template: FormTemplate) => {
+  const index = clientStore.templates.findIndex((t) => t.id === template.id);
+  if (index >= 0) {
+    clientStore.templates[index] = template;
+  } else {
+    clientStore.templates.unshift(template);
+  }
+  callSqlite('save_template', template);
+};
+
+export const deleteFormTemplate = (id: string) => {
+  clientStore.templates = clientStore.templates.filter((t) => t.id !== id);
+  callSqlite('delete_template', { id });
+};
+
 export const clearAllData = () => {
   clientStore = {
     classes: [],
@@ -449,6 +475,7 @@ export const clearAllData = () => {
     students: [],
     forms: [],
     responses: [],
+    templates: [],
   };
   callSqlite('clear_all_data', {});
 };

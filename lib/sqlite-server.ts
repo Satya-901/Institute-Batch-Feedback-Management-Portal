@@ -9,7 +9,9 @@ import {
   StudentItem,
   FeedbackForm,
   FeedbackResponse,
+  FormTemplate,
 } from '@/types';
+import { DEFAULT_FORM_TEMPLATES } from './default-templates';
 
 const require = createRequire(import.meta.url);
 
@@ -207,7 +209,28 @@ function initSchema(db: Database): void {
       username TEXT PRIMARY KEY,
       password TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS form_templates (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      questions TEXT NOT NULL,
+      createdAt TEXT NOT NULL
+    );
   `);
+
+  try {
+    const tmplCount = queryObjects<{ c: number }>(db, 'SELECT count(*) as c FROM form_templates');
+    if (!tmplCount || tmplCount[0]?.c === 0) {
+      for (const tmpl of DEFAULT_FORM_TEMPLATES) {
+        db.run(
+          `INSERT OR IGNORE INTO form_templates (id, name, description, questions, createdAt)
+           VALUES (?, ?, ?, ?, ?)`,
+          [tmpl.id, tmpl.name, tmpl.description || '', JSON.stringify(tmpl.questions), tmpl.createdAt]
+        );
+      }
+    }
+  } catch {}
 
   try {
     db.run('ALTER TABLE feedback_forms ADD COLUMN classId TEXT;');
@@ -271,6 +294,7 @@ export async function getAllData(): Promise<{
   students: StudentItem[];
   forms: FeedbackForm[];
   responses: FeedbackResponse[];
+  templates: FormTemplate[];
   lastUpdated: string;
 }> {
   const db = await getSqliteDb();
@@ -394,6 +418,26 @@ export async function getAllData(): Promise<{
     };
   });
 
+  const rawTemplates = queryObjects<any>(
+    db,
+    'SELECT * FROM form_templates ORDER BY createdAt DESC'
+  );
+  const templates: FormTemplate[] = rawTemplates.map((t) => {
+    let questions = [];
+    try {
+      questions = JSON.parse(t.questions || '[]');
+    } catch {
+      questions = [];
+    }
+    return {
+      id: t.id,
+      name: t.name,
+      description: t.description || '',
+      questions,
+      createdAt: t.createdAt,
+    };
+  });
+
   return {
     classes,
     batches,
@@ -401,6 +445,7 @@ export async function getAllData(): Promise<{
     students,
     forms,
     responses,
+    templates,
     lastUpdated: new Date().toISOString(),
   };
 }
@@ -714,6 +759,28 @@ export async function sqliteSubmitFeedbackResponse(
   };
 }
 
+export async function sqliteSaveFormTemplate(template: FormTemplate): Promise<void> {
+  const db = await getSqliteDb();
+  db.run(
+    `INSERT OR REPLACE INTO form_templates (id, name, description, questions, createdAt)
+     VALUES (?, ?, ?, ?, ?)`,
+    [
+      template.id,
+      template.name,
+      template.description || '',
+      JSON.stringify(template.questions || []),
+      template.createdAt || new Date().toISOString(),
+    ]
+  );
+  saveDatabase(db);
+}
+
+export async function sqliteDeleteFormTemplate(id: string): Promise<void> {
+  const db = await getSqliteDb();
+  db.run('DELETE FROM form_templates WHERE id = ?', [id]);
+  saveDatabase(db);
+}
+
 export async function sqliteClearAllData(): Promise<void> {
   const db = await getSqliteDb();
   db.run('DELETE FROM classes;');
@@ -735,6 +802,7 @@ export async function getActiveDatabaseInfo(): Promise<{
   studentsCount: number;
   formsCount: number;
   responsesCount: number;
+  templatesCount: number;
   lastUpdated: string;
 }> {
   const data = await getAllData();
@@ -748,6 +816,7 @@ export async function getActiveDatabaseInfo(): Promise<{
     studentsCount: data.students.length,
     formsCount: data.forms.length,
     responsesCount: data.responses.length,
+    templatesCount: data.templates.length,
     lastUpdated: data.lastUpdated,
   };
 }

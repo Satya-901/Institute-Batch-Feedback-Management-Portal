@@ -1,0 +1,176 @@
+import { FormTemplate } from '@/types';
+
+export const DEFAULT_FORM_TEMPLATES: FormTemplate[] = [
+  {
+    id: 'tmpl-neet-standard-9',
+    name: 'NEET Standard Faculty Evaluation (9 Parameters)',
+    description: 'Complete 9-parameter institutional evaluation formula: (Total Marks ÷ Students) ÷ 9.',
+    createdAt: '2026-10-01T00:00:00.000Z',
+    questions: [
+      {
+        id: 'q-1',
+        text: 'NCERT concept clarity and theoretical explanation in NEET lectures',
+        type: 'multiple_choice',
+        options: [
+          { id: 'opt-1-1', text: 'Outstanding - Crystal clear concepts with NCERT linkage', score: 10 },
+          { id: 'opt-1-2', text: 'Good - Concepts well understood', score: 8 },
+          { id: 'opt-1-3', text: 'Average - Needs more examples', score: 5 },
+          { id: 'opt-1-4', text: 'Poor - Difficult to follow', score: 2 },
+        ],
+        required: true,
+      },
+      {
+        id: 'q-2',
+        text: 'NEET numerical problem-solving techniques & PYQ discussion',
+        type: 'multiple_choice',
+        options: [
+          { id: 'opt-2-1', text: 'Excellent - Short-tricks, step-by-step guidance & PYQs solved', score: 10 },
+          { id: 'opt-2-2', text: 'Good - Regular problem-solving practiced', score: 8 },
+          { id: 'opt-2-3', text: 'Moderate - More numerical practice required', score: 5 },
+          { id: 'opt-2-4', text: 'Inadequate - Numericals skipped or rushed', score: 2 },
+        ],
+        required: true,
+      },
+      {
+        id: 'q-3',
+        text: 'DPP (Daily Practice Problems) discussion and doubt-clearing support',
+        type: 'multiple_choice',
+        options: [
+          { id: 'opt-3-1', text: 'Very Prompt - All doubts cleared patiently', score: 10 },
+          { id: 'opt-3-2', text: 'Regular - Doubts addressed after class', score: 8 },
+          { id: 'opt-3-3', text: 'Occasional - Some doubts remain unresolved', score: 5 },
+          { id: 'opt-3-4', text: 'Unsatisfactory - Doubts rarely entertained', score: 2 },
+        ],
+        required: true,
+      },
+      {
+        id: 'q-4',
+        text: 'Classroom discipline, pace of syllabus completion & exam motivation',
+        type: 'multiple_choice',
+        options: [
+          { id: 'opt-4-1', text: 'Perfect pace, high energy & very inspiring', score: 10 },
+          { id: 'opt-4-2', text: 'Well organized & good pace', score: 8 },
+          { id: 'opt-4-3', text: 'A bit fast/slow at times', score: 5 },
+          { id: 'opt-4-4', text: 'Poor pacing & lack of focus', score: 2 },
+        ],
+        required: true,
+      },
+      {
+        id: 'q-5',
+        text: 'Board work, blackboard/screen visibility and structured lecture notes',
+        type: 'multiple_choice',
+        options: [
+          { id: 'opt-5-1', text: 'Crystal clear, well structured & readable', score: 10 },
+          { id: 'opt-5-2', text: 'Good, easy to take down notes', score: 8 },
+          { id: 'opt-5-3', text: 'Average organization', score: 5 },
+          { id: 'opt-5-4', text: 'Cluttered or difficult to read', score: 2 },
+        ],
+        required: true,
+      },
+      {
+        id: 'q-6',
+        text: 'Teacher responsiveness to student queries and doubts during live lecture',
+        type: 'multiple_choice',
+        options: [
+          { id: 'opt-6-1', text: 'Always encourages and answers immediately', score: 10 },
+          { id: 'opt-6-2', text: 'Answers queries regularly', score: 8 },
+          { id: 'opt-6-3', text: 'Answers sometimes', score: 5 },
+          { id: 'opt-6-4', text: 'Rarely entertains in-class questions', score: 2 },
+        ],
+        required: true,
+      },
+      {
+        id: 'q-7',
+        text: 'Revision support, high-yield formula sheets, and exam strategy guidance',
+        type: 'multiple_choice',
+        options: [
+          { id: 'opt-7-1', text: 'Comprehensive summary & high-yield revision', score: 10 },
+          { id: 'opt-7-2', text: 'Good summaries provided', score: 8 },
+          { id: 'opt-7-3', text: 'Average revision support', score: 5 },
+          { id: 'opt-7-4', text: 'No revision guidance provided', score: 2 },
+        ],
+        required: true,
+      },
+      {
+        id: 'q-8',
+        text: 'Regularity of tests, performance analysis, and mistakes discussion',
+        type: 'multiple_choice',
+        options: [
+          { id: 'opt-8-1', text: 'Systematic tracking and detailed test analysis', score: 10 },
+          { id: 'opt-8-2', text: 'Regular tests discussed', score: 8 },
+          { id: 'opt-8-3', text: 'Tests conducted but discussion delayed', score: 5 },
+          { id: 'opt-8-4', text: 'Rarely discussed after tests', score: 2 },
+        ],
+        required: true,
+      },
+      {
+        id: 'q-9',
+        text: 'Any specific feedback or topics where you need extra academic revision/support',
+        type: 'text',
+        required: false,
+      },
+    ],
+  },
+  {
+    id: 'tmpl-quick-5',
+    name: 'Quick 5-Criterion Feedback Template',
+    description: 'Fast, focused 5-criterion feedback for weekly checks and quick pulse reviews.',
+    createdAt: '2026-10-01T00:00:00.000Z',
+    questions: [
+      {
+        id: 'q-1',
+        text: 'Subject knowledge and conceptual clarity of faculty',
+        type: 'multiple_choice',
+        options: [
+          { id: 'opt-1-1', text: 'Outstanding & crystal clear', score: 10 },
+          { id: 'opt-1-2', text: 'Good explanation', score: 8 },
+          { id: 'opt-1-3', text: 'Average understanding', score: 5 },
+          { id: 'opt-1-4', text: 'Poor / needs improvement', score: 2 },
+        ],
+        required: true,
+      },
+      {
+        id: 'q-2',
+        text: 'Punctuality, class discipline & syllabus pacing',
+        type: 'multiple_choice',
+        options: [
+          { id: 'opt-2-1', text: 'Excellent & on-schedule', score: 10 },
+          { id: 'opt-2-2', text: 'Good pace', score: 8 },
+          { id: 'opt-2-3', text: 'Moderate / irregular', score: 5 },
+          { id: 'opt-2-4', text: 'Unsatisfactory pace', score: 2 },
+        ],
+        required: true,
+      },
+      {
+        id: 'q-3',
+        text: 'Numerical problem-solving techniques and practice in class',
+        type: 'multiple_choice',
+        options: [
+          { id: 'opt-3-1', text: 'Superb tricks & variety of problems', score: 10 },
+          { id: 'opt-3-2', text: 'Adequate practice', score: 8 },
+          { id: 'opt-3-3', text: 'Basic questions only', score: 5 },
+          { id: 'opt-3-4', text: 'Little to no numerical practice', score: 2 },
+        ],
+        required: true,
+      },
+      {
+        id: 'q-4',
+        text: 'Doubt clearing, accessibility, and student encouragement',
+        type: 'multiple_choice',
+        options: [
+          { id: 'opt-4-1', text: 'Always available & very encouraging', score: 10 },
+          { id: 'opt-4-2', text: 'Helpful with doubts', score: 8 },
+          { id: 'opt-4-3', text: 'Sometimes clears doubts', score: 5 },
+          { id: 'opt-4-4', text: 'Unapproachable / doubts ignored', score: 2 },
+        ],
+        required: true,
+      },
+      {
+        id: 'q-5',
+        text: 'General comments and suggestions for faculty improvement',
+        type: 'text',
+        required: false,
+      },
+    ],
+  },
+];

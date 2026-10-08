@@ -18,6 +18,8 @@ import {
   mysqlSubmitFeedbackResponse,
   mysqlClearAllData,
   mysqlAdminLogin,
+  mysqlSaveFormTemplate,
+  mysqlDeleteFormTemplate,
 } from './mysql-server';
 
 import {
@@ -38,6 +40,8 @@ import {
   sqliteDeleteFeedbackForm,
   sqliteSubmitFeedbackResponse,
   sqliteClearAllData,
+  sqliteSaveFormTemplate,
+  sqliteDeleteFormTemplate,
   getSqliteDb,
 } from './sqlite-server';
 
@@ -48,6 +52,7 @@ import {
   StudentItem,
   FeedbackForm,
   FeedbackResponse,
+  FormTemplate,
 } from '@/types';
 
 /**
@@ -72,6 +77,7 @@ export async function getAllData(): Promise<{
   students: StudentItem[];
   forms: FeedbackForm[];
   responses: FeedbackResponse[];
+  templates: FormTemplate[];
   lastUpdated: string;
 }> {
   const mysqlUp = await isMysqlConnected();
@@ -382,6 +388,38 @@ export async function submitFeedbackResponse(
 }
 
 /**
+ * Save / Update Form Template
+ * Dual-write to both MySQL and SQLite.
+ */
+export async function saveFormTemplate(template: FormTemplate): Promise<void> {
+  const mysqlUp = await isMysqlConnected();
+  if (mysqlUp) {
+    try {
+      await mysqlSaveFormTemplate(template);
+    } catch (err) {
+      console.warn('[DB Manager] MySQL saveFormTemplate failed:', err);
+    }
+  }
+  await sqliteSaveFormTemplate(template);
+}
+
+/**
+ * Delete Form Template
+ * Deletes from both MySQL and SQLite.
+ */
+export async function deleteFormTemplate(id: string): Promise<void> {
+  const mysqlUp = await isMysqlConnected();
+  if (mysqlUp) {
+    try {
+      await mysqlDeleteFormTemplate(id);
+    } catch (err) {
+      console.warn('[DB Manager] MySQL deleteFormTemplate failed:', err);
+    }
+  }
+  await sqliteDeleteFormTemplate(id);
+}
+
+/**
  * Clear All Data
  * Clears data from both databases.
  */
@@ -458,6 +496,7 @@ export async function getActiveDatabaseInfo(): Promise<{
   studentsCount: number;
   formsCount: number;
   responsesCount: number;
+  templatesCount?: number;
   lastUpdated: string;
 }> {
   const mysqlUp = await isMysqlConnected();
@@ -477,6 +516,7 @@ export async function getActiveDatabaseInfo(): Promise<{
         studentsCount: data.students.length,
         formsCount: data.forms.length,
         responsesCount: data.responses.length,
+        templatesCount: data.templates?.length || 0,
         lastUpdated: data.lastUpdated,
       };
     } catch (err) {
@@ -495,6 +535,7 @@ export async function getActiveDatabaseInfo(): Promise<{
     studentsCount: sqliteData.students.length,
     formsCount: sqliteData.forms.length,
     responsesCount: sqliteData.responses.length,
+    templatesCount: sqliteData.templates?.length || 0,
     lastUpdated: sqliteData.lastUpdated,
   };
 }

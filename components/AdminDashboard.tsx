@@ -21,6 +21,7 @@ import {
   StudentItem,
   FeedbackForm,
   FeedbackResponse,
+  FormTemplate,
 } from '@/types';
 import {
   getClasses,
@@ -29,6 +30,7 @@ import {
   getStudents,
   getFeedbackForms,
   getResponses,
+  getFormTemplates,
   syncFromSqlite,
   isAdminLoggedIn,
   setAdminLoggedIn,
@@ -121,6 +123,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialTab }) =>
   const [students, setStudents] = useState<StudentItem[]>(() => getStudents());
   const [forms, setForms] = useState<FeedbackForm[]>(() => getFeedbackForms());
   const [responses, setResponses] = useState<FeedbackResponse[]>(() => getResponses());
+  const [templates, setTemplates] = useState<FormTemplate[]>(() => getFormTemplates());
 
   // Preview form inside admin mode
   const [adminPreviewFormId, setAdminPreviewFormId] = useState<string | null>(null);
@@ -138,6 +141,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialTab }) =>
     setStudents(data.students);
     setForms(data.forms);
     setResponses(data.responses);
+    setTemplates(data.templates || []);
   }, []);
 
   // Initial sync from Server on mount & auto-sync across devices
@@ -165,6 +169,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialTab }) =>
         setStudents(data.students);
         setForms(data.forms);
         setResponses(data.responses);
+        setTemplates(data.templates || []);
       }
     });
 
@@ -370,6 +375,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialTab }) =>
                 teachers={teachers}
                 students={students}
                 responses={responses}
+                templates={templates}
                 onDataChanged={refreshData}
                 onOpenTestStudentView={handleTestStudentForm}
                 initialBatchIdToCreate={initialBatchIdForForm}

@@ -6,8 +6,10 @@ import {
   StudentItem,
   FeedbackForm,
   FeedbackResponse,
+  FormTemplate,
 } from '@/types';
 import { getAllData as getSqliteAllData } from './sqlite-server';
+import { DEFAULT_FORM_TEMPLATES } from './default-templates';
 
 let pool: Pool | null = null;
 let isInitialized = false;
@@ -186,6 +188,32 @@ export async function initMysqlSchemaAndSeed(): Promise<boolean> {
           ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
         `);
 
+        await conn.query(`
+          CREATE TABLE IF NOT EXISTS form_templates (
+            id VARCHAR(191) PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            description TEXT,
+            questions LONGTEXT NOT NULL,
+            createdAt VARCHAR(100) NOT NULL
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        `);
+
+        // Seed default templates in MySQL if table is empty
+        try {
+          const [tmplRows]: any = await conn.query('SELECT count(*) as c FROM form_templates');
+          if (!tmplRows || tmplRows[0]?.c === 0) {
+            for (const tmpl of DEFAULT_FORM_TEMPLATES) {
+              await conn.query(
+                `INSERT IGNORE INTO form_templates (id, name, description, questions, createdAt)
+                 VALUES (?, ?, ?, ?, ?)`,
+                [tmpl.id, tmpl.name, tmpl.description || '', JSON.stringify(tmpl.questions), tmpl.createdAt]
+              );
+            }
+          }
+        } catch (tErr) {
+          console.warn('[MySQL] Failed to seed default form templates:', tErr);
+        }
+
         // Always ensure default admin user exists
         const defaultAdminPass = process.env.ADMIN_PASSWORD || 'adminpassword123';
         await conn.query(
@@ -338,6 +366,7 @@ export async function mysqlGetAllData(): Promise<{
   students: StudentItem[];
   forms: FeedbackForm[];
   responses: FeedbackResponse[];
+  templates: FormTemplate[];
   lastUpdated: string;
 }> {
   await initMysqlSchemaAndSeed();
@@ -461,6 +490,25 @@ export async function mysqlGetAllData(): Promise<{
     };
   });
 
+  const [rawTemplates]: any = await p.query(
+    'SELECT * FROM form_templates ORDER BY createdAt DESC'
+  );
+  const templates: FormTemplate[] = (rawTemplates || []).map((t: any) => {
+    let questions = [];
+    try {
+      questions = JSON.parse(t.questions || '[]');
+    } catch {
+      questions = [];
+    }
+    return {
+      id: t.id,
+      name: t.name,
+      description: t.description || '',
+      questions,
+      createdAt: t.createdAt,
+    };
+  });
+
   return {
     classes,
     batches,
@@ -468,6 +516,7 @@ export async function mysqlGetAllData(): Promise<{
     students,
     forms,
     responses,
+    templates,
     lastUpdated: new Date().toISOString(),
   };
 }
@@ -770,6 +819,32 @@ export async function mysqlClearAllData(): Promise<void> {
   await p.query('DELETE FROM students;');
   await p.query('DELETE FROM feedback_forms;');
   await p.query('DELETE FROM feedback_responses;');
+}
+
+export async function mysqlSaveFormTemplate(template: FormTemplate): Promise<void> {
+  await initMysqlSchemaAndSeed();
+  const p = getMysqlPool();
+  await p.query(
+    `INSERT INTO form_templates (id, name, description, questions, createdAt)
+     VALUES (?, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+       name = VALUES(name),
+       description = VALUES(description),
+       questions = VALUES(questions)`,
+    [
+      template.id,
+      template.name,
+      template.description || '',
+      JSON.stringify(template.questions || []),
+      template.createdAt || new Date().toISOString(),
+    ]
+  );
+}
+
+export async function mysqlDeleteFormTemplate(id: string): Promise<void> {
+  await initMysqlSchemaAndSeed();
+  const p = getMysqlPool();
+  await p.query('DELETE FROM form_templates WHERE id = ?', [id]);
 }
 
 export async function mysqlAdminLogin(username: string, pass: string): Promise<boolean> {

@@ -18,6 +18,8 @@ import {
   submitFeedbackResponse,
   clearAllData,
   checkAdminLogin,
+  saveFormTemplate,
+  deleteFormTemplate,
 } from '@/lib/db-manager';
 
 export const dynamic = 'force-dynamic';
@@ -143,6 +145,16 @@ export async function POST(req: NextRequest) {
 
       case 'clear_all_data': {
         await clearAllData();
+        return NextResponse.json({ success: true });
+      }
+
+      case 'save_template': {
+        await saveFormTemplate(payload);
+        return NextResponse.json({ success: true });
+      }
+
+      case 'delete_template': {
+        await deleteFormTemplate(payload.id);
         return NextResponse.json({ success: true });
       }
 

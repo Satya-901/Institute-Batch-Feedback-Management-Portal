@@ -62,6 +62,14 @@ export interface FeedbackQuestion {
   teacherId?: string; // Optional: evaluate specific teacher
 }
 
+export interface FormTemplate {
+  id: string;
+  name: string;
+  description?: string;
+  questions: FeedbackQuestion[];
+  createdAt: string;
+}
+
 export interface FeedbackForm {
   id: string;
   title: string;

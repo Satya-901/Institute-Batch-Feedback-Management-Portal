@@ -16,6 +16,10 @@ import {
   Award,
   Layers,
   HelpCircle,
+  LayoutTemplate,
+  Download,
+  BookmarkPlus,
+  Sparkles,
 } from 'lucide-react';
 import {
   FeedbackForm,
@@ -27,14 +31,19 @@ import {
   FeedbackResponse,
   QuestionType,
   QuestionOption,
+  FormTemplate,
 } from '@/types';
 import {
   saveFeedbackForm,
   toggleFeedbackFormStatus,
   deleteFeedbackForm,
+  getFormTemplates,
+  saveFormTemplate,
 } from '@/lib/storage';
+import { DEFAULT_FORM_TEMPLATES } from '@/lib/default-templates';
 import { toastSuccess, toastError, confirmAction } from '@/lib/notification';
 import { QRCodeModal } from '@/components/QRCodeModal';
+import { QuestionTemplatesModal } from '@/components/QuestionTemplatesModal';
 
 interface FeedbackFormsTabProps {
   forms: FeedbackForm[];
@@ -43,6 +52,7 @@ interface FeedbackFormsTabProps {
   teachers: TeacherItem[];
   students: StudentItem[];
   responses: FeedbackResponse[];
+  templates?: FormTemplate[];
   onDataChanged: () => void;
   onOpenTestStudentView: (formId: string) => void;
   initialBatchIdToCreate?: string | null;
@@ -56,6 +66,7 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
   teachers,
   students,
   responses,
+  templates = [],
   onDataChanged,
   onOpenTestStudentView,
   initialBatchIdToCreate,
@@ -63,6 +74,19 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
 }) => {
   // Modal visibility
   const [showCreateModal, setShowCreateModal] = useState<boolean>(Boolean(initialBatchIdToCreate));
+  const [showTemplateModal, setShowTemplateModal] = useState<boolean>(false);
+  const [showImportDropdown, setShowImportDropdown] = useState<boolean>(false);
+  const [showSaveAsTemplateModal, setShowSaveAsTemplateModal] = useState<boolean>(false);
+  const [saveAsTemplateName, setSaveAsTemplateName] = useState<string>('');
+  const [saveAsTemplateDesc, setSaveAsTemplateDesc] = useState<string>('');
+
+  // Templates list (fallback to storage and defaults)
+  const allTemplates = useMemo(() => {
+    if (templates && templates.length > 0) return templates;
+    const stored = getFormTemplates();
+    if (stored && stored.length > 0) return stored;
+    return DEFAULT_FORM_TEMPLATES;
+  }, [templates]);
 
   // QR Code Modal State
   const [qrModalData, setQrModalData] = useState<{
@@ -218,6 +242,63 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
 
   const handleUpdateQuestion = (id: string, updates: Partial<FeedbackQuestion>) => {
     setQuestions((prev) => prev.map((q) => (q.id === id ? { ...q, ...updates } : q)));
+  };
+
+  // Template handlers
+  const handleUseTemplateInForm = (tmpl: FormTemplate) => {
+    const clonedQuestions: FeedbackQuestion[] = JSON.parse(JSON.stringify(tmpl.questions || [])).map(
+      (q: FeedbackQuestion, idx: number) => ({
+        ...q,
+        id: `q-${Date.now()}-${idx + 1}`,
+        teacherId: '',
+      })
+    );
+    setQuestions(clonedQuestions);
+    setTitle((prev) => (prev ? prev : tmpl.name));
+    setDescription((prev) => (prev ? prev : tmpl.description || ''));
+    setShowCreateModal(true);
+    toastSuccess(`Applied template "${tmpl.name}" with ${clonedQuestions.length} questions!`);
+  };
+
+  const handleImportTemplate = (tmpl: FormTemplate) => {
+    const clonedQuestions: FeedbackQuestion[] = JSON.parse(JSON.stringify(tmpl.questions || [])).map(
+      (q: FeedbackQuestion, idx: number) => ({
+        ...q,
+        id: `q-${Date.now()}-${idx + 1}`,
+        teacherId: '',
+      })
+    );
+    setQuestions(clonedQuestions);
+    setShowImportDropdown(false);
+    toastSuccess(`Imported ${clonedQuestions.length} questions from "${tmpl.name}"!`);
+  };
+
+  const handleConfirmSaveAsTemplate = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!saveAsTemplateName.trim()) {
+      toastError('Please enter a template name');
+      return;
+    }
+    if (questions.length === 0) {
+      toastError('Cannot save template with 0 questions');
+      return;
+    }
+    const newTmpl: FormTemplate = {
+      id: `tmpl-${Date.now()}`,
+      name: saveAsTemplateName.trim(),
+      description: saveAsTemplateDesc.trim(),
+      questions: questions.map((q) => ({
+        ...q,
+        teacherId: undefined, // Template questions are universal
+      })),
+      createdAt: new Date().toISOString(),
+    };
+    saveFormTemplate(newTmpl);
+    toastSuccess(`Saved as template: "${newTmpl.name}"!`);
+    setShowSaveAsTemplateModal(false);
+    setSaveAsTemplateName('');
+    setSaveAsTemplateDesc('');
+    onDataChanged();
   };
 
   const handleDeleteQuestion = (id: string) => {
@@ -400,6 +481,15 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
               </select>
             </div>
           )}
+
+          <button
+            onClick={() => setShowTemplateModal(true)}
+            className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-semibold shadow-xs transition-colors"
+            title="Manage and create reusable question templates"
+          >
+            <LayoutTemplate className="w-3.5 h-3.5" />
+            <span>Templates ({allTemplates.length})</span>
+          </button>
 
           <button
             onClick={() => handleOpenCreateModal()}
@@ -666,31 +756,99 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
                 </div>
               </div>
 
-              {/* Question Builder: Only Two Fields Allowed: Multiple Choice & Text Box */}
+              {/* Question Builder */}
               <div className="pt-2 border-t border-slate-200 space-y-3">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div>
                     <span className="text-xs font-bold text-slate-800 uppercase tracking-wide">
                       Questions ({questions.length})
                     </span>
                     <span className="text-[11px] text-slate-500 block">
-                      Choose Multiple Choice (with 4 scored options) or Text box
+                      Choose Multiple Choice (4 scored options) or Text box
                     </span>
                   </div>
 
-                  <div className="flex items-center space-x-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {/* Import from Template Dropdown */}
+                    {allTemplates.length > 0 && (
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setShowImportDropdown(!showImportDropdown)}
+                          className="inline-flex items-center space-x-1 px-2.5 py-1.5 text-xs font-semibold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg border border-indigo-200 transition-colors"
+                          title="Import question set from a template"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Import Template</span>
+                        </button>
+
+                        {showImportDropdown && (
+                          <div className="absolute right-0 mt-1 w-72 bg-white rounded-xl shadow-xl border border-slate-200 py-1.5 z-50 animate-in fade-in zoom-in-95">
+                            <div className="px-3 py-1.5 border-b border-slate-100 flex items-center justify-between text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                              <span>Choose Template</span>
+                              <button
+                                type="button"
+                                onClick={() => setShowImportDropdown(false)}
+                                className="text-slate-400 hover:text-slate-600 text-xs"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                            <div className="max-h-60 overflow-y-auto">
+                              {allTemplates.map((tmpl) => (
+                                <button
+                                  key={tmpl.id}
+                                  type="button"
+                                  onClick={() => handleImportTemplate(tmpl)}
+                                  className="w-full text-left px-3 py-2 text-xs hover:bg-indigo-50 flex flex-col transition-colors border-b border-slate-50 last:border-0"
+                                >
+                                  <div className="font-semibold text-slate-800 flex items-center justify-between">
+                                    <span className="line-clamp-1">{tmpl.name}</span>
+                                    <span className="text-[10px] bg-indigo-100 text-indigo-700 font-bold px-1.5 py-0.2 rounded ml-1 shrink-0">
+                                      {tmpl.questions.length} Qs
+                                    </span>
+                                  </div>
+                                  {tmpl.description && (
+                                    <span className="text-[10px] text-slate-500 line-clamp-1 mt-0.5">
+                                      {tmpl.description}
+                                    </span>
+                                  )}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Save Current as Template */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSaveAsTemplateName(title ? `${title} (Template)` : '');
+                        setSaveAsTemplateDesc(description || '');
+                        setShowSaveAsTemplateModal(true);
+                      }}
+                      className="inline-flex items-center space-x-1 px-2.5 py-1.5 text-xs font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-lg border border-emerald-200 transition-colors"
+                      title="Save these questions into reusable template library"
+                    >
+                      <BookmarkPlus className="w-3.5 h-3.5" />
+                      <span>Save as Template</span>
+                    </button>
+
                     <button
                       type="button"
                       onClick={() => handleAddQuestion('multiple_choice')}
-                      className="inline-flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-lg border border-teal-200 transition-colors"
+                      className="inline-flex items-center space-x-1 px-2.5 py-1.5 text-xs font-semibold bg-teal-50 hover:bg-teal-100 text-teal-800 rounded-lg border border-teal-200 transition-colors"
                     >
                       <Plus className="w-3.5 h-3.5" />
-                      <span>+ Multiple Choice (4 Options)</span>
+                      <span>+ MCQ (4 Options)</span>
                     </button>
+
                     <button
                       type="button"
                       onClick={() => handleAddQuestion('text')}
-                      className="inline-flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg border border-slate-200 transition-colors"
+                      className="inline-flex items-center space-x-1 px-2.5 py-1.5 text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg border border-slate-200 transition-colors"
                     >
                       <Plus className="w-3.5 h-3.5" />
                       <span>+ Text Box</span>
@@ -898,6 +1056,88 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
           </div>
         </div>
       )}
+
+      {/* Save as Template Modal */}
+      {showSaveAsTemplateModal && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center space-x-2">
+                <div className="w-8 h-8 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600">
+                  <BookmarkPlus className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-slate-900 text-sm">Save Questions as Template</h4>
+                  <p className="text-[11px] text-slate-500">
+                    Saves current {questions.length} questions for instant reuse.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSaveAsTemplateModal(false)}
+                className="text-slate-400 hover:text-slate-600 text-xs font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmSaveAsTemplate} className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-800 mb-1">
+                  Template Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. NEET Weekly Concept Check"
+                  value={saveAsTemplateName}
+                  onChange={(e) => setSaveAsTemplateName(e.target.value)}
+                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-800 mb-1">
+                  Description (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Standard 5 questions for weekly pulses"
+                  value={saveAsTemplateDesc}
+                  onChange={(e) => setSaveAsTemplateDesc(e.target.value)}
+                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end space-x-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowSaveAsTemplateModal(false)}
+                  className="px-3.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-xs"
+                >
+                  Save Template
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Question Templates Library Modal */}
+      <QuestionTemplatesModal
+        isOpen={showTemplateModal}
+        onClose={() => setShowTemplateModal(false)}
+        templates={allTemplates}
+        onUseTemplateInForm={handleUseTemplateInForm}
+        onDataChanged={onDataChanged}
+      />
 
       {/* QR Code Modal */}
       <QRCodeModal
