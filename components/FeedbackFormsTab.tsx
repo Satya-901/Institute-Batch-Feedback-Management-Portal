@@ -20,6 +20,7 @@ import {
   Download,
   BookmarkPlus,
   Sparkles,
+  Edit2,
 } from 'lucide-react';
 import {
   FeedbackForm,
@@ -73,6 +74,7 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
 }) => {
   // Modal visibility
   const [showCreateModal, setShowCreateModal] = useState<boolean>(Boolean(initialBatchIdToCreate));
+  const [editingFormId, setEditingFormId] = useState<string | null>(null);
   const [showTemplateModal, setShowTemplateModal] = useState<boolean>(false);
   const [showImportDropdown, setShowImportDropdown] = useState<boolean>(false);
   const [showSaveAsTemplateModal, setShowSaveAsTemplateModal] = useState<boolean>(false);
@@ -189,8 +191,9 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
     });
   }, [forms, selectedClassFilter, selectedBatchFilter]);
 
-  // Open modal
+  // Open create modal
   const handleOpenCreateModal = (preselectedBatchId?: string) => {
+    setEditingFormId(null);
     let targetClass = classes[0]?.id || '';
     let targetBatch = 'all';
 
@@ -207,11 +210,77 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
     setTitle('');
     setDescription('');
     setExpiresAt('');
+    setQuestions([
+      {
+        id: `q-${Date.now()}-1`,
+        text: 'Concept clarity and explanation depth',
+        type: 'multiple_choice',
+        options: [
+          { id: 'opt-1', text: 'Outstanding - Crystal clear', score: 10 },
+          { id: 'opt-2', text: 'Good - Well explained', score: 8 },
+          { id: 'opt-3', text: 'Average - Needs improvement', score: 5 },
+          { id: 'opt-4', text: 'Poor - Difficult to understand', score: 2 },
+        ],
+        required: true,
+      },
+      {
+        id: `q-${Date.now()}-2`,
+        text: 'Problem-solving practice and doubt-clearing support',
+        type: 'multiple_choice',
+        options: [
+          { id: 'opt-1', text: 'Excellent & patient with doubts', score: 10 },
+          { id: 'opt-2', text: 'Regular problem-solving', score: 8 },
+          { id: 'opt-3', text: 'Occasional doubts solved', score: 5 },
+          { id: 'opt-4', text: 'Rarely entertains doubts', score: 2 },
+        ],
+        required: true,
+      },
+      {
+        id: `q-${Date.now()}-3`,
+        text: 'Any feedback or suggestions for faculty improvement',
+        type: 'text',
+        required: false,
+      },
+    ]);
+    setShowCreateModal(true);
+  };
+
+  // Open edit modal for existing form
+  const handleOpenEditModal = (form: FeedbackForm) => {
+    setEditingFormId(form.id);
+    setSelectedClassId(form.classId || classes[0]?.id || '');
+    setSelectedBatchId(form.batchId || 'all');
+    setTitle(form.title);
+    setDescription(form.description || '');
+    setExpiresAt(form.expiresAt || '');
+    setQuestions(
+      JSON.parse(
+        JSON.stringify(
+          form.questions && form.questions.length > 0
+            ? form.questions
+            : [
+                {
+                  id: `q-${Date.now()}-1`,
+                  text: 'Evaluation Question',
+                  type: 'multiple_choice',
+                  options: [
+                    { id: 'opt-1', text: 'Excellent', score: 10 },
+                    { id: 'opt-2', text: 'Good', score: 8 },
+                    { id: 'opt-3', text: 'Average', score: 5 },
+                    { id: 'opt-4', text: 'Poor', score: 2 },
+                  ],
+                  required: true,
+                },
+              ]
+        )
+      )
+    );
     setShowCreateModal(true);
   };
 
   const handleCloseModal = () => {
     setShowCreateModal(false);
+    setEditingFormId(null);
     if (onClearInitialBatchId) onClearInitialBatchId();
   };
 
@@ -371,25 +440,30 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
       }
     }
 
+    const existingForm = editingFormId ? forms.find((f) => f.id === editingFormId) : null;
     const classObj = classes.find((c) => c.id === selectedClassId);
     const prefix = (classObj?.code || 'FB').replace(/[^a-zA-Z0-9]/g, '').slice(0, 3).toUpperCase();
-    const code = `${prefix}-${Math.floor(100 + Math.random() * 900)}`;
+    const code = existingForm?.shareableCode || `${prefix}-${Math.floor(100 + Math.random() * 900)}`;
 
-    const newForm: FeedbackForm = {
-      id: `fb-form-${Date.now()}`,
+    const formToSave: FeedbackForm = {
+      id: editingFormId || `fb-form-${Date.now()}`,
       title: title.trim(),
       description: description.trim(),
       classId: selectedClassId,
       batchId: selectedBatchId || 'all',
       questions,
-      status: 'active',
+      status: existingForm?.status || 'active',
       expiresAt: expiresAt || undefined,
       shareableCode: code,
-      createdAt: new Date().toISOString(),
+      createdAt: existingForm?.createdAt || new Date().toISOString(),
     };
 
-    await saveFeedbackForm(newForm);
-    toastSuccess(`Feedback form created! (Share Code: ${newForm.shareableCode})`);
+    await saveFeedbackForm(formToSave);
+    toastSuccess(
+      editingFormId
+        ? `Feedback form "${formToSave.title}" updated successfully!`
+        : `Feedback form created! (Share Code: ${formToSave.shareableCode})`
+    );
     handleCloseModal();
     await onDataChanged();
   };
@@ -616,6 +690,13 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
 
                   <div className="flex items-center space-x-1">
                     <button
+                      onClick={() => handleOpenEditModal(form)}
+                      className="p-1 text-slate-400 hover:text-blue-600 rounded transition-colors"
+                      title="Edit feedback form"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button
                       onClick={() => handleToggleStatus(form)}
                       className="p-1 text-slate-400 hover:text-slate-600 rounded"
                       title={isActive ? 'Close form' : 'Open form'}
@@ -637,7 +718,7 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
         </div>
       )}
 
-      {/* Clean Create Feedback Form Modal */}
+      {/* Clean Create / Edit Feedback Form Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
           <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 max-h-[90vh] flex flex-col justify-between">
@@ -645,7 +726,9 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
               {/* Header */}
               <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                 <div>
-                  <h3 className="font-bold text-slate-900 text-base">Create Feedback Form</h3>
+                  <h3 className="font-bold text-slate-900 text-base">
+                    {editingFormId ? 'Edit Feedback Form' : 'Create Feedback Form'}
+                  </h3>
                   <p className="text-xs text-slate-500">
                     Two fields only: Multiple Choice (4 scored options) and Text box questions.
                   </p>
@@ -1045,7 +1128,7 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
                   onClick={handleSaveForm}
                   className="px-4 py-1.5 text-xs font-semibold bg-teal-600 hover:bg-teal-700 text-white rounded-lg shadow-xs"
                 >
-                  Publish Feedback Form
+                  {editingFormId ? 'Update Feedback Form' : 'Publish Feedback Form'}
                 </button>
               </div>
             </div>

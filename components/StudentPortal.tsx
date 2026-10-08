@@ -80,11 +80,12 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   const [answers, setAnswers] = useState<Record<string, string | number>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Available batches for selected class
-  const classBatches = useMemo(() => {
-    if (!selectedClassId) return [];
-    return batches.filter((b) => b.classId === selectedClassId);
-  }, [selectedClassId, batches]);
+  // Instruction banner state when auto-advancing to the next teacher
+  const [evaluationBanner, setEvaluationBanner] = useState<{
+    justEvaluatedTeacher: string;
+    nextTeacherName: string;
+    remainingCount: number;
+  } | null>(null);
 
   // Find active form for selected class / batch, or use targetFormId if specified
   const activeForm = useMemo(() => {
@@ -95,8 +96,8 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
 
     if (!selectedClassId) return null;
 
-    if (classBatches.length > 0) {
-      // Class has batches: find form matching selected batch, or form for class with batchId === 'all'
+    const directBatches = batches.filter((b) => b.classId === selectedClassId);
+    if (directBatches.length > 0) {
       if (selectedBatchId && selectedBatchId !== 'all') {
         const batchMatch = forms.find(
           (f) => f.status === 'active' && f.batchId === selectedBatchId
@@ -107,7 +108,6 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
         forms.find((f) => f.status === 'active' && f.classId === selectedClassId) || null
       );
     } else {
-      // Class has NO batches (e.g. NEET Dropper / direct class)
       const classDirectForm = forms.find(
         (f) => f.status === 'active' && f.classId === selectedClassId
       );
@@ -115,16 +115,41 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
 
       return forms.find((f) => f.status === 'active' && f.batchId === 'all') || null;
     }
-  }, [targetFormId, forms, selectedClassId, selectedBatchId, classBatches.length]);
+  }, [targetFormId, forms, selectedClassId, selectedBatchId, batches]);
+
+  // Synchronize Class and Batch when activeForm is targeted / loaded
+  useEffect(() => {
+    if (activeForm) {
+      if (activeForm.classId && activeForm.classId !== selectedClassId) {
+        setSelectedClassId(activeForm.classId);
+      }
+      if (activeForm.batchId && activeForm.batchId !== selectedBatchId) {
+        setSelectedBatchId(activeForm.batchId);
+      }
+    }
+  }, [activeForm]);
+
+  // Effective Class and Batch IDs
+  const effectiveClassId = activeForm ? activeForm.classId : selectedClassId;
+  const effectiveBatchId =
+    activeForm && activeForm.batchId && activeForm.batchId !== 'all'
+      ? activeForm.batchId
+      : selectedBatchId;
+
+  // Available batches for effective class
+  const classBatches = useMemo(() => {
+    if (!effectiveClassId) return [];
+    return batches.filter((b) => b.classId === effectiveClassId);
+  }, [effectiveClassId, batches]);
 
   // Teachers available for this class / batch
   const availableTeachers = useMemo(() => {
-    if (selectedBatchId && selectedBatchId !== 'all') {
-      const batchTeachers = teachers.filter((t) => t.assignedBatchIds.includes(selectedBatchId));
+    if (effectiveBatchId && effectiveBatchId !== 'all') {
+      const batchTeachers = teachers.filter((t) => t.assignedBatchIds.includes(effectiveBatchId));
       if (batchTeachers.length > 0) return batchTeachers;
     }
-    if (selectedClassId) {
-      const classBatchIds = batches.filter((b) => b.classId === selectedClassId).map((b) => b.id);
+    if (effectiveClassId) {
+      const classBatchIds = batches.filter((b) => b.classId === effectiveClassId).map((b) => b.id);
       if (classBatchIds.length > 0) {
         const matched = teachers.filter(
           (t) =>
@@ -135,28 +160,42 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
       }
     }
     return teachers;
-  }, [selectedClassId, selectedBatchId, batches, teachers]);
+  }, [effectiveClassId, effectiveBatchId, batches, teachers]);
+
+  const cleanStudentId = studentId.trim().toUpperCase();
 
   // Compute effective teacher to evaluate
   const effectiveTeacherId = useMemo(() => {
+    // If user explicitly picked a teacher who is available and not yet submitted
     if (selectedTeacherId && availableTeachers.some((t) => t.id === selectedTeacherId)) {
-      return selectedTeacherId;
+      const isExplicitTeacherSubmitted = cleanStudentId && activeForm
+        ? responses.some(
+            (r) =>
+              r.formId === activeForm.id &&
+              r.studentId.toUpperCase() === cleanStudentId &&
+              r.teacherId === selectedTeacherId
+          )
+        : false;
+      if (!isExplicitTeacherSubmitted) {
+        return selectedTeacherId;
+      }
     }
-    const cleanId = studentId.trim().toUpperCase();
-    if (cleanId && activeForm) {
+
+    // Otherwise, pick the FIRST unsubmitted teacher
+    if (cleanStudentId && activeForm) {
       const firstUnsubmitted = availableTeachers.find(
         (t) =>
           !responses.some(
             (r) =>
               r.formId === activeForm.id &&
-              r.studentId.toUpperCase() === cleanId &&
+              r.studentId.toUpperCase() === cleanStudentId &&
               r.teacherId === t.id
           )
       );
       if (firstUnsubmitted) return firstUnsubmitted.id;
     }
     return availableTeachers[0]?.id || '';
-  }, [selectedTeacherId, availableTeachers, studentId, activeForm, responses]);
+  }, [selectedTeacherId, availableTeachers, cleanStudentId, activeForm, responses]);
 
   // Check if form is expired
   const isFormExpired = useMemo(() => {
@@ -184,29 +223,27 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
 
   // Check if current selected teacher has already received feedback from this student
   const isSelectedTeacherSubmitted = useMemo(() => {
-    if (!studentId.trim() || !activeForm || !effectiveTeacherId) return false;
-    const cleanId = studentId.trim().toUpperCase();
+    if (!cleanStudentId || !activeForm || !effectiveTeacherId) return false;
     return responses.some(
       (r) =>
         r.formId === activeForm.id &&
-        r.studentId.toUpperCase() === cleanId &&
+        r.studentId.toUpperCase() === cleanStudentId &&
         r.teacherId === effectiveTeacherId
     );
-  }, [studentId, activeForm, effectiveTeacherId, responses]);
+  }, [cleanStudentId, activeForm, effectiveTeacherId, responses]);
 
   // Check if ALL available teachers have been evaluated by this student
   const areAllTeachersSubmitted = useMemo(() => {
-    if (!studentId.trim() || !activeForm || availableTeachers.length === 0) return false;
-    const cleanId = studentId.trim().toUpperCase();
+    if (!cleanStudentId || !activeForm || availableTeachers.length === 0) return false;
     return availableTeachers.every((t) =>
       responses.some(
         (r) =>
           r.formId === activeForm.id &&
-          r.studentId.toUpperCase() === cleanId &&
+          r.studentId.toUpperCase() === cleanStudentId &&
           r.teacherId === t.id
       )
     );
-  }, [studentId, activeForm, availableTeachers, responses]);
+  }, [cleanStudentId, activeForm, availableTeachers, responses]);
 
   // Handle question answer change
   const handleAnswerChange = (questionId: string, value: string | number) => {
@@ -220,20 +257,23 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   const handleSubmitResponse = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!studentId.trim()) {
+    const cleanId = studentId.trim().toUpperCase();
+    const cleanName = studentName.trim();
+
+    if (!cleanId) {
       toastError('Please enter your Student ID / Roll Number');
       return;
     }
-    if (!studentName.trim()) {
+    if (!cleanName) {
       toastError('Please enter your Full Name');
       return;
     }
-    if (!selectedClassId) {
+    if (!effectiveClassId) {
       toastError('Please select your Class');
       return;
     }
-    // Only require batch selection if the selected class has batches!
-    if (classBatches.length > 0 && (!selectedBatchId || selectedBatchId === 'all' || selectedBatchId === '')) {
+    // Only require manual batch selection if form is not pre-allotted, class has batches, and batch is empty
+    if (!activeForm && classBatches.length > 0 && (!selectedBatchId || selectedBatchId === '')) {
       toastError('Please select your Batch');
       return;
     }
@@ -242,7 +282,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
       return;
     }
     if (!activeForm) {
-      toastError('No active feedback form found for the selected class');
+      toastError('No active feedback form found');
       return;
     }
     if (isFormExpired) {
@@ -267,7 +307,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
 
     const confirmed = await confirmAction({
       title: `Submit Feedback for ${teacherName}?`,
-      text: 'Are you sure you want to submit? Once submitted, your response is recorded and cannot be modified.',
+      text: 'Are you sure you want to submit? Once submitted, your response is recorded.',
       confirmButtonText: 'Yes, Submit Evaluation',
       cancelButtonText: 'Review Answers',
       isDestructive: false,
@@ -299,10 +339,10 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
 
       const res = await submitFeedbackResponse({
         formId: activeForm.id,
-        classId: selectedClassId,
-        batchId: selectedBatchId || 'all',
-        studentId: studentId.trim().toUpperCase(),
-        studentName: studentName.trim(),
+        classId: effectiveClassId,
+        batchId: effectiveBatchId || 'all',
+        studentId: cleanId,
+        studentName: cleanName,
         teacherId: effectiveTeacherId,
         answers,
         totalScore,
@@ -313,36 +353,48 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
       setIsSubmitting(false);
 
       if (res.success) {
-        // Save student info in localStorage so it stays pre-filled for the next teacher!
+        // Save student profile so it stays pre-filled for next evaluations
         setSavedStudentProfile({
-          studentId: studentId.trim().toUpperCase(),
-          name: studentName.trim(),
-          classId: selectedClassId,
-          batchId: selectedBatchId,
+          studentId: cleanId,
+          name: cleanName,
+          classId: effectiveClassId,
+          batchId: effectiveBatchId,
         });
 
-        await alertSuccess(
-          'Feedback Recorded Successfully!',
-          `Your evaluation for ${teacherName} has been submitted (${totalScore}/${maxPossibleScore} marks). Details are saved on this device so you can easily evaluate remaining teachers.`
-        );
-
-        toastSuccess(`Feedback recorded for ${teacherName}`);
         setAnswers({});
 
-        // Auto move to the next unsubmitted teacher
-        const nextPending = availableTeachers.find(
-          (t) =>
-            t.id !== selectedTeacherId &&
-            !responses.some(
-              (r) =>
-                r.formId === activeForm.id &&
-                r.studentId.toUpperCase() === studentId.trim().toUpperCase() &&
-                r.teacherId === t.id
-            )
-        );
+        // Find remaining pending teachers who haven't received feedback from this student yet
+        const remainingUnsubmitted = availableTeachers.filter((t) => {
+          if (t.id === effectiveTeacherId) return false; // Just submitted
+          return !responses.some(
+            (r) =>
+              r.formId === activeForm.id &&
+              r.studentId.toUpperCase() === cleanId &&
+              r.teacherId === t.id
+          );
+        });
 
-        if (nextPending) {
-          setSelectedTeacherId(nextPending.id);
+        if (remainingUnsubmitted.length > 0) {
+          const nextTeacher = remainingUnsubmitted[0];
+          setSelectedTeacherId(nextTeacher.id);
+          setEvaluationBanner({
+            justEvaluatedTeacher: teacherName,
+            nextTeacherName: nextTeacher.name,
+            remainingCount: remainingUnsubmitted.length,
+          });
+
+          await alertSuccess(
+            'Feedback Recorded Successfully!',
+            `Your evaluation for "${teacherName}" has been recorded.\n\n👉 Next Faculty: "${nextTeacher.name}" is now automatically selected.\nPlease fill the evaluation below for ${nextTeacher.name}.`
+          );
+          toastSuccess(`Now evaluating ${nextTeacher.name}`);
+        } else {
+          setEvaluationBanner(null);
+          await alertSuccess(
+            'All Faculty Evaluations Completed! 🎉',
+            `Thank you, ${cleanName}! You have successfully submitted feedback for all faculty members in your class/batch.`
+          );
+          toastSuccess('All evaluations completed!');
         }
 
         await onDataChanged();
@@ -424,46 +476,75 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
               />
             </div>
 
-            {/* Select Class */}
+            {/* Select / Allotted Class */}
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Select Class *
+              <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center justify-between">
+                <span>Class {activeForm ? '(Allotted)' : '*'}</span>
+                {activeForm && (
+                  <span className="text-[10px] font-bold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded border border-teal-200">
+                    Pre-allotted
+                  </span>
+                )}
               </label>
-              <select
-                value={selectedClassId}
-                onChange={(e) => {
-                  const newClassId = e.target.value;
-                  setSelectedClassId(newClassId);
-                  const matched = batches.filter((b) => b.classId === newClassId);
-                  if (matched.length > 0) {
-                    setSelectedBatchId('');
-                  } else {
-                    setSelectedBatchId('all');
-                  }
-                }}
-                className="w-full px-3 py-2 text-xs sm:text-sm font-medium border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:ring-2 focus:ring-teal-500"
-              >
-                {classes.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} ({c.code})
-                  </option>
-                ))}
-              </select>
+              {activeForm ? (
+                <div className="w-full px-3 py-2 text-xs sm:text-sm font-semibold text-slate-800 bg-slate-100 border border-slate-300 rounded-lg flex items-center justify-between">
+                  <span className="truncate">
+                    {classes.find((c) => c.id === effectiveClassId)?.name || 'Class'}
+                  </span>
+                  <span className="text-[11px] font-mono text-slate-500 uppercase ml-1 shrink-0">
+                    {classes.find((c) => c.id === effectiveClassId)?.code || ''}
+                  </span>
+                </div>
+              ) : (
+                <select
+                  value={selectedClassId}
+                  onChange={(e) => {
+                    const newClassId = e.target.value;
+                    setSelectedClassId(newClassId);
+                    const matched = batches.filter((b) => b.classId === newClassId);
+                    if (matched.length > 0) {
+                      setSelectedBatchId('');
+                    } else {
+                      setSelectedBatchId('all');
+                    }
+                  }}
+                  className="w-full px-3 py-2 text-xs sm:text-sm font-medium border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:ring-2 focus:ring-teal-500"
+                >
+                  {classes.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} ({c.code})
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
 
-            {/* Select Batch */}
+            {/* Select / Allotted Batch */}
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Select Batch {classBatches.length > 0 ? '*' : '(Not Applicable)'}
+              <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center justify-between">
+                <span>Batch {activeForm?.batchId && activeForm.batchId !== 'all' ? '(Allotted)' : ''}</span>
+                {activeForm?.batchId && activeForm.batchId !== 'all' && (
+                  <span className="text-[10px] font-bold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded border border-teal-200">
+                    Pre-allotted
+                  </span>
+                )}
               </label>
-              {classBatches.length > 0 ? (
+              {activeForm?.batchId && activeForm.batchId !== 'all' ? (
+                <div className="w-full px-3 py-2 text-xs sm:text-sm font-semibold text-slate-800 bg-slate-100 border border-slate-300 rounded-lg flex items-center justify-between">
+                  <span className="truncate">
+                    {batches.find((b) => b.id === effectiveBatchId)?.name || 'Batch'}
+                  </span>
+                  <span className="text-[11px] font-mono text-teal-700 font-bold ml-1 shrink-0">
+                    {batches.find((b) => b.id === effectiveBatchId)?.code || ''}
+                  </span>
+                </div>
+              ) : classBatches.length > 0 ? (
                 <select
-                  required
                   value={selectedBatchId}
                   onChange={(e) => setSelectedBatchId(e.target.value)}
                   className="w-full px-3 py-2 text-xs sm:text-sm font-medium border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:ring-2 focus:ring-teal-500"
                 >
-                  <option value="">-- Choose Batch --</option>
+                  <option value="all">All Batches (Common)</option>
                   {classBatches.map((b) => (
                     <option key={b.id} value={b.id}>
                       {b.name} {b.code ? `(${b.code})` : ''}
@@ -530,6 +611,28 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
             </p>
           </div>
         </div>
+
+        {/* Next Faculty Evaluation Instruction Banner */}
+        {evaluationBanner && !areAllTeachersSubmitted && (
+          <div className="p-4 bg-teal-50 border-2 border-teal-500 rounded-xl flex items-start space-x-3.5 shadow-sm">
+            <div className="w-8 h-8 rounded-full bg-teal-600 text-white flex items-center justify-center font-bold text-sm shrink-0 shadow-xs">
+              ✓
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                <h4 className="font-bold text-teal-950 text-sm">
+                  Next Faculty Selected: <span className="underline decoration-teal-600">{evaluationBanner.nextTeacherName}</span>
+                </h4>
+                <span className="text-[11px] font-bold text-teal-800 bg-teal-200/60 px-2.5 py-0.5 rounded-full self-start sm:self-auto">
+                  {evaluationBanner.remainingCount} faculty remaining
+                </span>
+              </div>
+              <p className="text-xs text-teal-800 mt-1">
+                Feedback for <strong>{evaluationBanner.justEvaluatedTeacher}</strong> has been saved. Please complete the evaluation questions below for <strong>{evaluationBanner.nextTeacherName}</strong>.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Step 2: Evaluation Questionnaire */}
         {!activeForm ? (
@@ -621,6 +724,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                             return (
                               <label
                                 key={opt.id || optIdx}
+                                onClick={() => handleAnswerChange(q.id, opt.text)}
                                 className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${
                                   isSelected
                                     ? 'bg-teal-50 border-teal-500 shadow-xs scale-[1.01]'
@@ -630,7 +734,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                                 <div className="flex items-center space-x-2.5">
                                   <input
                                     type="radio"
-                                    name={`question-${q.id}`}
+                                    name={`question-${effectiveTeacherId}-${q.id}`}
                                     value={opt.text}
                                     checked={isSelected}
                                     onChange={() => handleAnswerChange(q.id, opt.text)}

@@ -70,10 +70,11 @@ export default function HomePage() {
   // Student active session state
   const [currentStudent, setCurrentStudent] = useState<StudentItem | null>(null);
 
-  // Read share code if provided in URL (e.g. ?code=CHE-101)
+  // Read share code or direct form ID if provided in URL (e.g. ?code=CHE-101 or ?formId=fb-form-123)
   const [shareCode] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
-      return new URLSearchParams(window.location.search).get('code');
+      const p = new URLSearchParams(window.location.search);
+      return p.get('code') || p.get('formId') || p.get('id') || p.get('form');
     }
     return null;
   });
@@ -124,10 +125,17 @@ export default function HomePage() {
     };
   }, [refreshData]);
 
-  // Target form matching shareable link code
+  // Target form matching shareable link code or form id
   const targetFormId = useMemo(() => {
     if (shareCode && forms.length > 0) {
-      return forms.find((f) => f.shareableCode.toUpperCase() === shareCode.toUpperCase())?.id || null;
+      const clean = shareCode.trim().toUpperCase();
+      return (
+        forms.find(
+          (f) =>
+            f.shareableCode.toUpperCase() === clean ||
+            f.id.toUpperCase() === clean
+        )?.id || null
+      );
     }
     return null;
   }, [shareCode, forms]);

@@ -95,10 +95,18 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
     return forms[0] || null;
   }, [forms, selectedFormId, filteredResponses]);
 
+  // Dynamic number of questions in active form (used as divisor instead of hardcoded 9)
+  const activeQuestionCount = useMemo(() => {
+    if (activeForm && activeForm.questions.length > 0) {
+      return activeForm.questions.length;
+    }
+    return 9; // Fallback only if no questions exist
+  }, [activeForm]);
+
   // Teacher-wise metrics with the requested formula:
   // 1. Total marks given by all students added together
   // 2. Divided by number of students who evaluated
-  // 3. Divided by 9
+  // 3. Divided by Number of Questions in the feedback form
   const teacherStats = useMemo(() => {
     const map = new Map<
       string,
@@ -108,14 +116,14 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
         totalScore: number;
         maxScore: number;
         avgScorePerStudent: number;
-        formulaRatingDividedBy9: number;
+        formulaRating: number;
         percentage: number;
         studentScores: {
           id: string;
           studentId: string;
           studentName: string;
           score: number;
-          scoreDividedBy9: number;
+          scoreDividedByQuestions: number;
           maxScore: number;
           submittedAt: string;
         }[];
@@ -130,7 +138,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
         totalScore: 0,
         maxScore: 0,
         avgScorePerStudent: 0,
-        formulaRatingDividedBy9: 0,
+        formulaRating: 0,
         percentage: 0,
         studentScores: [],
       });
@@ -143,6 +151,11 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
       if (stat) {
         const respScore = Number(r.totalScore) || 0;
         const respMax = Number(r.maxPossibleScore) || 0;
+        const respForm = forms.find((f) => f.id === r.formId) || activeForm;
+        const qCount = Math.max(
+          respForm?.questions?.length || Object.keys(r.answers || {}).length || activeQuestionCount,
+          1
+        );
 
         stat.responsesCount += 1;
         stat.totalScore += respScore;
@@ -152,24 +165,24 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
           studentId: r.studentId,
           studentName: r.studentName,
           score: respScore,
-          scoreDividedBy9: Number((respScore / 9).toFixed(2)),
+          scoreDividedByQuestions: Number((respScore / qCount).toFixed(2)),
           maxScore: respMax,
           submittedAt: r.submittedAt,
         });
       }
     });
 
-    // Compute averages and the formula: (Total Score ÷ Number of Students) ÷ 9
+    // Compute averages and the formula: (Total Score ÷ Number of Students) ÷ Number of Questions
     const list = Array.from(map.values()).map((s) => {
       const avgScorePerStudent = s.responsesCount > 0 ? s.totalScore / s.responsesCount : 0;
-      // FORMULA: Total marks added, divided by number of students, divided by 9
-      const formulaRatingDividedBy9 = s.responsesCount > 0 ? avgScorePerStudent / 9 : 0;
+      // FORMULA: Total marks added, divided by number of students, divided by Number of Questions
+      const formulaRating = s.responsesCount > 0 ? avgScorePerStudent / activeQuestionCount : 0;
       const percentage = s.maxScore > 0 ? (s.totalScore / s.maxScore) * 100 : 0;
 
       return {
         ...s,
         avgScorePerStudent,
-        formulaRatingDividedBy9,
+        formulaRating,
         percentage,
       };
     });
@@ -181,11 +194,11 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
         if (b.responsesCount === 0) return -1;
         if (a.responsesCount === 0) return 1;
       }
-      return b.formulaRatingDividedBy9 - a.formulaRatingDividedBy9;
+      return b.formulaRating - a.formulaRating;
     });
 
     return list.filter((s) => s.responsesCount > 0 || selectedTeacherFilter === 'all');
-  }, [teachers, filteredResponses, selectedTeacherFilter]);
+  }, [teachers, filteredResponses, selectedTeacherFilter, forms, activeForm, activeQuestionCount]);
 
   // Overall aggregate metrics across all filtered responses
   const overallMetrics = useMemo(() => {
@@ -200,8 +213,8 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
     const totalSubmissions = filteredResponses.length;
     const avgScorePerStudent = totalSubmissions > 0 ? grandTotalScore / totalSubmissions : 0;
 
-    // OVERALL FORMULA RATING: (Grand Total Score ÷ Total Submissions) ÷ 9
-    const overallRatingDividedBy9 = totalSubmissions > 0 ? avgScorePerStudent / 9 : 0;
+    // OVERALL FORMULA RATING: (Grand Total Score ÷ Total Submissions) ÷ Number of Questions
+    const overallRating = totalSubmissions > 0 ? avgScorePerStudent / activeQuestionCount : 0;
     const overallPercentage =
       grandMaxScore > 0 ? Number(((grandTotalScore / grandMaxScore) * 100).toFixed(1)) : 0;
 
@@ -214,11 +227,11 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
       grandTotalScore,
       grandMaxScore,
       avgScorePerStudent,
-      overallRatingDividedBy9,
+      overallRating,
       overallPercentage,
       evaluatedTeachersCount,
     };
-  }, [filteredResponses]);
+  }, [filteredResponses, activeQuestionCount]);
 
   const hasActiveFilters =
     selectedFormId !== 'all' ||
@@ -234,66 +247,212 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
     toastSuccess('All filters reset');
   };
 
-  // Export comprehensive report to CSV with the formula column included
+  // Export comprehensive report to CSV with Question option counts and student answers included
   const handleExportCSV = () => {
     if (filteredResponses.length === 0) {
       toastSuccess('No responses to export');
       return;
     }
 
-    const headers = [
-      'Submission ID',
-      'Student Roll ID',
-      'Student Name',
-      'Class',
-      'Batch',
-      'Faculty Evaluated',
-      'Marks Given',
-      'Marks Divided by 9 (Rating)',
-      'Max Marks',
-      'Score Percentage (%)',
-      'Submission Date & Time',
-    ];
+    const csvSections: string[] = [];
 
-    const rows = filteredResponses.map((r) => {
+    // --- OVERVIEW HEADER ---
+    csvSections.push(`"EduPulse Faculty Feedback Comprehensive Report"`);
+    csvSections.push(`"Generated On:","${new Date().toLocaleString()}"`);
+    csvSections.push(`"Feedback Form:","${activeForm ? activeForm.title : 'All Forms'}"`);
+    csvSections.push(`"Total Number of Questions:","${activeQuestionCount}"`);
+    csvSections.push(`"Formula Used:","(Total Marks / Number of Students) / ${activeQuestionCount} Questions"`);
+    csvSections.push(`"Total Student Responses:","${filteredResponses.length}"`);
+    csvSections.push(`"Overall Rating:","${overallMetrics.overallRating.toFixed(2)} / 10"`);
+    csvSections.push('');
+
+    // --- SECTION 1: QUESTION-WISE ANALYSIS & OPTION DISTRIBUTION ---
+    if (activeForm && activeForm.questions.length > 0) {
+      csvSections.push(`"=== SECTION 1: QUESTION-WISE ANALYSIS & OPTION DISTRIBUTION ==="`);
+      csvSections.push(
+        [
+          '"Q#"',
+          '"Question Text"',
+          '"Question Type"',
+          '"Option A Text"',
+          '"Opt A Count"',
+          '"Opt A %"',
+          '"Option B Text"',
+          '"Opt B Count"',
+          '"Opt B %"',
+          '"Option C Text"',
+          '"Opt C Count"',
+          '"Opt C %"',
+          '"Option D Text"',
+          '"Opt D Count"',
+          '"Opt D %"',
+          '"Total Answers"',
+        ].join(',')
+      );
+
+      activeForm.questions.forEach((q, qIdx) => {
+        if (q.type === 'multiple_choice' && q.options) {
+          const optStats = q.options.map((opt) => {
+            const count = filteredResponses.filter(
+              (r) => r.answers[q.id] === opt.text || r.answers[q.id] === opt.id
+            ).length;
+            return { text: opt.text, count };
+          });
+          const totalQAnswers = optStats.reduce((sum, o) => sum + o.count, 0);
+
+          const getOptData = (idx: number) => {
+            if (idx < optStats.length) {
+              const o = optStats[idx];
+              const pct = totalQAnswers > 0 ? Math.round((o.count / totalQAnswers) * 100) : 0;
+              return [`"${o.text.replace(/"/g, '""')}"`, o.count, `"${pct}%"`];
+            }
+            return ['"-"', 0, '"0%"'];
+          };
+
+          const row = [
+            `"Q${qIdx + 1}"`,
+            `"${q.text.replace(/"/g, '""')}"`,
+            `"Multiple Choice"`,
+            ...getOptData(0),
+            ...getOptData(1),
+            ...getOptData(2),
+            ...getOptData(3),
+            totalQAnswers,
+          ];
+          csvSections.push(row.join(','));
+        } else if (q.type === 'text') {
+          const commentsCount = filteredResponses.filter(
+            (r) => (r.answers[q.id] as string)?.trim()
+          ).length;
+          csvSections.push(
+            [
+              `"Q${qIdx + 1}"`,
+              `"${q.text.replace(/"/g, '""')}"`,
+              `"Open Text"`,
+              `"Text Feedback (${commentsCount} comments submitted)"`,
+              commentsCount,
+              '"N/A"',
+              '"-"',
+              0,
+              '"0%"',
+              '"-"',
+              0,
+              '"0%"',
+              '"-"',
+              0,
+              '"0%"',
+              commentsCount,
+            ].join(',')
+          );
+        }
+      });
+      csvSections.push('');
+    }
+
+    // --- SECTION 2: FACULTY PERFORMANCE LEADERBOARD ---
+    csvSections.push(`"=== SECTION 2: FACULTY PERFORMANCE LEADERBOARD ==="`);
+    csvSections.push(
+      [
+        '"Rank"',
+        '"Faculty Name"',
+        '"Subject / Department"',
+        '"Evaluated Students Count"',
+        '"Total Marks Scored"',
+        '"Max Possible Marks"',
+        '"Avg Marks / Student"',
+        `"Rating (Marks ÷ ${activeQuestionCount} Qs)"`,
+        '"Performance Percentage (%)"',
+      ].join(',')
+    );
+
+    teacherStats.forEach((tStat, idx) => {
+      csvSections.push(
+        [
+          `"#${idx + 1}"`,
+          `"${tStat.teacher.name.replace(/"/g, '""')}"`,
+          `"${(tStat.teacher.subjectSpecialization || []).join('; ').replace(/"/g, '""')}"`,
+          tStat.responsesCount,
+          tStat.totalScore,
+          tStat.maxScore,
+          tStat.avgScorePerStudent.toFixed(1),
+          tStat.formulaRating.toFixed(2),
+          `"${tStat.percentage.toFixed(1)}%"`,
+        ].join(',')
+      );
+    });
+    csvSections.push('');
+
+    // --- SECTION 3: STUDENT-WISE DETAILED EVALUATIONS & QUESTION ANSWERS ---
+    csvSections.push(`"=== SECTION 3: STUDENT-WISE DETAILED EVALUATIONS & QUESTION ANSWERS ==="`);
+
+    const activeQuestions = activeForm?.questions || [];
+    const studentHeaders = [
+      '"Submission ID"',
+      '"Student Roll ID"',
+      '"Student Name"',
+      '"Class"',
+      '"Batch"',
+      '"Faculty Evaluated"',
+      '"Marks Given"',
+      `"Rating (Score ÷ ${activeQuestionCount} Qs)"`,
+      '"Max Marks"',
+      '"Score %"',
+      '"Submission Date & Time"',
+      ...activeQuestions.map((q, idx) => `"Q${idx + 1}: ${q.text.replace(/"/g, '""')}"`),
+    ];
+    csvSections.push(studentHeaders.join(','));
+
+    filteredResponses.forEach((r) => {
       const cls = classes.find((c) => c.id === r.classId);
       const bch = batches.find((b) => b.id === r.batchId);
       const tch = teachers.find((t) => t.id === r.teacherId);
       const score = Number(r.totalScore) || 0;
-      const scoreDiv9 = (score / 9).toFixed(2);
+      const respForm = forms.find((f) => f.id === r.formId) || activeForm;
+      const qCount = Math.max(
+        respForm?.questions?.length || Object.keys(r.answers || {}).length || activeQuestionCount,
+        1
+      );
+      const scoreRating = (score / qCount).toFixed(2);
       const maxScore = Number(r.maxPossibleScore) || 0;
       const pct = maxScore > 0 ? ((score / maxScore) * 100).toFixed(1) : '0';
 
-      return [
+      const questionAnswerCols = activeQuestions.map((q) => {
+        const ans = r.answers[q.id];
+        if (ans === undefined || ans === null || ans === '') {
+          return '"-"';
+        }
+        return `"${String(ans).replace(/"/g, '""')}"`;
+      });
+
+      const row = [
         r.id,
-        r.studentId,
-        `"${r.studentName}"`,
-        `"${cls?.name || 'Class'}"`,
-        `"${bch?.name || 'Batch'}"`,
-        `"${tch?.name || 'Faculty'}"`,
+        `"${r.studentId}"`,
+        `"${(r.studentName || '').replace(/"/g, '""')}"`,
+        `"${(cls?.name || 'Class').replace(/"/g, '""')}"`,
+        `"${(bch?.name || 'Batch').replace(/"/g, '""')}"`,
+        `"${(tch?.name || 'Faculty').replace(/"/g, '""')}"`,
         score,
-        scoreDiv9,
+        scoreRating,
         maxScore,
-        `${pct}%`,
+        `"${pct}%"`,
         `"${new Date(r.submittedAt).toLocaleString()}"`,
+        ...questionAnswerCols,
       ];
+      csvSections.push(row.join(','));
     });
 
     const csvContent =
-      'data:text/csv;charset=utf-8,' +
-      [headers.join(','), ...rows.map((row) => row.join(','))].join('\n');
-
-    const encodedUri = encodeURI(csvContent);
+      'data:text/csv;charset=utf-8,' + encodeURIComponent(csvSections.join('\n'));
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
+    link.setAttribute('href', csvContent);
     link.setAttribute(
       'download',
-      `EduPulse_Faculty_Feedback_Report_${new Date().toISOString().slice(0, 10)}.csv`
+      `EduPulse_Faculty_Feedback_Full_Report_${new Date().toISOString().slice(0, 10)}.csv`
     );
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    toastSuccess('Feedback report downloaded as CSV');
+    toastSuccess('Comprehensive feedback report with questions & option counts exported to CSV');
   };
 
   const handlePrint = () => {
@@ -310,11 +469,11 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
               <h2 className="text-lg font-bold text-slate-900">Faculty Evaluation & Performance Reports</h2>
               <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold bg-teal-50 text-teal-700 border border-teal-200">
                 <Calculator className="w-3 h-3 text-teal-600" />
-                <span>Formula: (Total Marks ÷ Students) ÷ 9</span>
+                <span>Formula: (Total Marks ÷ Students) ÷ No. of Questions</span>
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-1">
-              Teacher ratings calculated by adding student marks, dividing by number of respondents, and dividing by 9.
+              Teacher ratings calculated by adding student marks, dividing by number of respondents, and dividing by total questions ({activeQuestionCount} Qs).
             </p>
           </div>
 
@@ -436,24 +595,24 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
 
       {/* KPI Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
-        {/* Card 1: Formula Rating (÷ 9) */}
+        {/* Card 1: Formula Rating (÷ No. of Questions) */}
         <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500">Average Rating (÷ 9)</span>
+            <span className="text-xs font-semibold text-slate-500">Average Rating (÷ {activeQuestionCount} Qs)</span>
             <span className="p-1.5 rounded-lg bg-teal-50 text-teal-600">
               <Star className="w-4 h-4" />
             </span>
           </div>
           <div className="mt-2 flex items-baseline space-x-1.5">
             <span className="text-2xl font-extrabold text-teal-700">
-              {overallMetrics.overallRatingDividedBy9 > 0
-                ? overallMetrics.overallRatingDividedBy9.toFixed(2)
+              {overallMetrics.overallRating > 0
+                ? overallMetrics.overallRating.toFixed(2)
                 : '0.00'}
             </span>
             <span className="text-xs text-slate-400 font-medium">/ 10</span>
           </div>
           <p className="text-[10px] text-teal-700 font-mono mt-1 font-semibold">
-            (Total Marks ÷ Students) ÷ 9
+            (Total Marks ÷ Students) ÷ {activeQuestionCount} Qs
           </p>
         </div>
 
@@ -514,7 +673,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
               <span>Faculty Performance Leaderboard & Score Summary</span>
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Ranked by formula: <strong className="text-slate-700">(Total Marks ÷ Students) ÷ 9</strong>
+              Ranked by formula: <strong className="text-slate-700">(Total Marks ÷ Students) ÷ No. of Questions ({activeQuestionCount} Qs)</strong>
             </p>
           </div>
           <span className="text-xs font-mono font-bold text-teal-800 bg-teal-50 px-2.5 py-1 rounded-lg border border-teal-200">
@@ -535,15 +694,15 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
                 totalScore,
                 maxScore,
                 avgScorePerStudent,
-                formulaRatingDividedBy9,
+                formulaRating,
                 percentage,
               }, idx) => {
                 const ratingBadgeColor =
-                  formulaRatingDividedBy9 >= 8.5
+                  formulaRating >= 8.5
                     ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                    : formulaRatingDividedBy9 >= 7.0
+                    : formulaRating >= 7.0
                     ? 'bg-blue-50 text-blue-800 border-blue-300'
-                    : formulaRatingDividedBy9 >= 5.0
+                    : formulaRating >= 5.0
                     ? 'bg-amber-50 text-amber-800 border-amber-300'
                     : 'bg-red-50 text-red-800 border-red-300';
 
@@ -587,12 +746,12 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
                             <Star className="w-3.5 h-3.5 fill-current" />
                             <span>
                               {responsesCount > 0
-                                ? formulaRatingDividedBy9.toFixed(2)
+                                ? formulaRating.toFixed(2)
                                 : 'N/A'}
                             </span>
                           </div>
                           <span className="block text-[9px] text-slate-400 uppercase font-mono mt-0.5">
-                            Score ÷ 9
+                            Score ÷ {activeQuestionCount} Qs
                           </span>
                         </div>
                       </div>
@@ -629,12 +788,12 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
                         <div className="mt-2.5 p-2 rounded-lg bg-teal-50/70 border border-teal-200/80 text-[11px] text-teal-900 font-mono">
                           <div className="flex items-center justify-between text-[10px] text-teal-700 font-bold uppercase">
                             <span>Formula Calculation:</span>
-                            <span>÷ 9</span>
+                            <span>÷ {activeQuestionCount} Qs</span>
                           </div>
                           <div className="mt-0.5 font-semibold">
-                            ({totalScore} ÷ {responsesCount}) ÷ 9 ={' '}
+                            ({totalScore} ÷ {responsesCount}) ÷ {activeQuestionCount} ={' '}
                             <strong className="text-teal-950 font-bold">
-                              {formulaRatingDividedBy9.toFixed(2)}
+                              {formulaRating.toFixed(2)}
                             </strong>
                           </div>
                         </div>
@@ -673,7 +832,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
           <div>
             <h3 className="font-bold text-slate-900 text-sm">Student Evaluation Responses</h3>
             <p className="text-xs text-slate-500">
-              Individual student submissions showing marks awarded and the calculated score divided by 9.
+              Individual student submissions showing marks awarded and the calculated score divided by total questions ({activeQuestionCount} Qs).
             </p>
           </div>
           <span className="text-xs font-mono font-semibold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg">
@@ -695,7 +854,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
                   <th className="px-3 py-2.5">Class / Batch</th>
                   <th className="px-3 py-2.5">Faculty Evaluated</th>
                   <th className="px-3 py-2.5 text-center">Marks Given</th>
-                  <th className="px-3 py-2.5 text-center">Score ÷ 9 (Rating)</th>
+                  <th className="px-3 py-2.5 text-center">Score ÷ {activeQuestionCount} Qs (Rating)</th>
                   <th className="px-3 py-2.5 text-center">Score %</th>
                   <th className="px-3 py-2.5">Submitted At</th>
                   <th className="px-3 py-2.5 text-right">Details</th>
@@ -708,7 +867,12 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
                   const bch = batches.find((b) => b.id === r.batchId);
                   const score = Number(r.totalScore) || 0;
                   const maxScore = Number(r.maxPossibleScore) || 0;
-                  const scoreDividedBy9 = (score / 9).toFixed(2);
+                  const respForm = forms.find((f) => f.id === r.formId) || activeForm;
+                  const qCount = Math.max(
+                    respForm?.questions?.length || Object.keys(r.answers || {}).length || activeQuestionCount,
+                    1
+                  );
+                  const scoreDividedByQuestions = (score / qCount).toFixed(2);
                   const pct = maxScore > 0 ? Number(((score / maxScore) * 100).toFixed(1)) : 0;
 
                   return (
@@ -731,7 +895,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
                         <span className="text-slate-400 font-normal">/ {maxScore}</span>
                       </td>
                       <td className="px-3 py-2.5 text-center font-mono font-bold text-teal-700 bg-teal-50/40">
-                        {scoreDividedBy9}
+                        {scoreDividedByQuestions}
                       </td>
                       <td className="px-3 py-2.5 text-center">
                         <span
@@ -952,10 +1116,10 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
                 </div>
                 <div className="text-right">
                   <span className="text-[10px] uppercase font-bold text-teal-700 block">
-                    Score Divided by 9
+                    Score ÷ {activeQuestionCount} Qs (Rating)
                   </span>
                   <span className="text-lg font-mono font-black text-teal-900">
-                    {(Number(inspectResponse.totalScore || 0) / 9).toFixed(2)}
+                    {(Number(inspectResponse.totalScore || 0) / activeQuestionCount).toFixed(2)}
                   </span>
                 </div>
               </div>
