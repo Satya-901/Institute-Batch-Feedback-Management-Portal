@@ -161,20 +161,23 @@ export const checkAdminCredentials = async (
 
 export const getClasses = (): ClassItem[] => clientStore.classes;
 
-export const saveClass = (cls: ClassItem) => {
+export const saveClass = async (cls: ClassItem): Promise<boolean> => {
   const index = clientStore.classes.findIndex((c) => c.id === cls.id);
   if (index >= 0) {
     clientStore.classes[index] = cls;
   } else {
     clientStore.classes.unshift(cls);
   }
-  callSqlite('save_class', cls);
+  const res = await callSqlite('save_class', cls);
+  return res?.success ?? true;
 };
 
-export const deleteClass = (id: string) => {
+export const deleteClass = async (id: string): Promise<boolean> => {
   clientStore.classes = clientStore.classes.filter((c) => c.id !== id);
   clientStore.batches = clientStore.batches.filter((b) => b.classId !== id);
-  callSqlite('delete_class', { id });
+  clientStore.forms = clientStore.forms.filter((f) => f.classId !== id);
+  const res = await callSqlite('delete_class', { id });
+  return res?.success ?? true;
 };
 
 // ---------------------------------------------------------------------------
@@ -183,19 +186,23 @@ export const deleteClass = (id: string) => {
 
 export const getBatches = (): BatchItem[] => clientStore.batches;
 
-export const saveBatch = (batch: BatchItem) => {
+export const saveBatch = async (batch: BatchItem): Promise<boolean> => {
   const index = clientStore.batches.findIndex((b) => b.id === batch.id);
   if (index >= 0) {
     clientStore.batches[index] = batch;
   } else {
     clientStore.batches.unshift(batch);
   }
-  callSqlite('save_batch', batch);
+  const res = await callSqlite('save_batch', batch);
+  return res?.success ?? true;
 };
 
-export const deleteBatch = (id: string) => {
+export const deleteBatch = async (id: string): Promise<boolean> => {
   clientStore.batches = clientStore.batches.filter((b) => b.id !== id);
-  callSqlite('delete_batch', { id });
+  clientStore.students = clientStore.students.filter((s) => s.batchId !== id);
+  clientStore.forms = clientStore.forms.filter((f) => f.batchId !== id);
+  const res = await callSqlite('delete_batch', { id });
+  return res?.success ?? true;
 };
 
 // ---------------------------------------------------------------------------
@@ -204,24 +211,27 @@ export const deleteBatch = (id: string) => {
 
 export const getTeachers = (): TeacherItem[] => clientStore.teachers;
 
-export const saveTeacher = (teacher: TeacherItem) => {
+export const saveTeacher = async (teacher: TeacherItem): Promise<boolean> => {
   const index = clientStore.teachers.findIndex((t) => t.id === teacher.id);
   if (index >= 0) {
     clientStore.teachers[index] = teacher;
   } else {
     clientStore.teachers.unshift(teacher);
   }
-  callSqlite('save_teacher', teacher);
+  const res = await callSqlite('save_teacher', teacher);
+  return res?.success ?? true;
 };
 
-export const deleteTeacher = (id: string) => {
+export const deleteTeacher = async (id: string): Promise<boolean> => {
   clientStore.teachers = clientStore.teachers.filter((t) => t.id !== id);
-  callSqlite('delete_teacher', { id });
+  clientStore.responses = clientStore.responses.filter((r) => r.teacherId !== id);
+  const res = await callSqlite('delete_teacher', { id });
+  return res?.success ?? true;
 };
 
-export const bulkAddTeachers = (
+export const bulkAddTeachers = async (
   newTeachers: TeacherItem[]
-): { addedCount: number; duplicateCount: number } => {
+): Promise<{ addedCount: number; duplicateCount: number }> => {
   const existingIds = new Set(
     clientStore.teachers.map((t) =>
       t.employeeId ? t.employeeId.trim().toUpperCase() : t.name.trim().toUpperCase()
@@ -242,7 +252,7 @@ export const bulkAddTeachers = (
 
   if (validToAdd.length > 0) {
     clientStore.teachers = [...validToAdd, ...clientStore.teachers];
-    callSqlite('bulk_add_teachers', { teachers: validToAdd });
+    await callSqlite('bulk_add_teachers', { teachers: validToAdd });
   }
 
   return { addedCount: validToAdd.length, duplicateCount: duplicates };
@@ -284,7 +294,7 @@ export const setSavedStudentProfile = (profile: SavedStudentProfile): void => {
 
 export const getStudents = (): StudentItem[] => clientStore.students;
 
-export const saveStudent = (student: StudentItem) => {
+export const saveStudent = async (student: StudentItem): Promise<boolean> => {
   const index = clientStore.students.findIndex(
     (s) => s.id === student.id || s.studentId === student.studentId
   );
@@ -293,12 +303,13 @@ export const saveStudent = (student: StudentItem) => {
   } else {
     clientStore.students.unshift(student);
   }
-  callSqlite('save_student', student);
+  const res = await callSqlite('save_student', student);
+  return res?.success ?? true;
 };
 
-export const bulkAddStudents = (
+export const bulkAddStudents = async (
   newStudents: StudentItem[]
-): { addedCount: number; duplicateCount: number } => {
+): Promise<{ addedCount: number; duplicateCount: number }> => {
   const existingIds = new Set(
     clientStore.students.map((s) => s.studentId.trim().toUpperCase())
   );
@@ -317,27 +328,31 @@ export const bulkAddStudents = (
 
   if (validToAdd.length > 0) {
     clientStore.students = [...validToAdd, ...clientStore.students];
-    callSqlite('bulk_add_students', { students: validToAdd });
+    await callSqlite('bulk_add_students', { students: validToAdd });
   }
 
   return { addedCount: validToAdd.length, duplicateCount: duplicates };
 };
 
-export const deleteStudent = (id: string) => {
+export const deleteStudent = async (id: string): Promise<boolean> => {
   clientStore.students = clientStore.students.filter(
     (s) => s.id !== id && s.studentId !== id
   );
-  callSqlite('delete_student', { id });
+  const res = await callSqlite('delete_student', { id });
+  return res?.success ?? true;
 };
 
-export const updateStudentPassword = (studentId: string, newPassword: string): boolean => {
+export const updateStudentPassword = async (
+  studentId: string,
+  newPassword: string
+): Promise<boolean> => {
   const index = clientStore.students.findIndex(
     (s) => s.studentId.toUpperCase() === studentId.trim().toUpperCase()
   );
   if (index >= 0) {
     clientStore.students[index].password = newPassword;
     clientStore.students[index].hasChangedPassword = true;
-    callSqlite('update_student_password', { studentId, newPassword });
+    await callSqlite('update_student_password', { studentId, newPassword });
     return true;
   }
   return false;
@@ -349,29 +364,32 @@ export const updateStudentPassword = (studentId: string, newPassword: string): b
 
 export const getFeedbackForms = (): FeedbackForm[] => clientStore.forms;
 
-export const saveFeedbackForm = (form: FeedbackForm) => {
+export const saveFeedbackForm = async (form: FeedbackForm): Promise<boolean> => {
   const index = clientStore.forms.findIndex((f) => f.id === form.id);
   if (index >= 0) {
     clientStore.forms[index] = form;
   } else {
     clientStore.forms.unshift(form);
   }
-  callSqlite('save_form', form);
+  const res = await callSqlite('save_form', form);
+  return res?.success ?? true;
 };
 
-export const toggleFeedbackFormStatus = (id: string): 'active' | 'closed' => {
+export const toggleFeedbackFormStatus = async (id: string): Promise<'active' | 'closed'> => {
   const item = clientStore.forms.find((f) => f.id === id);
   if (item) {
     item.status = item.status === 'active' ? 'closed' : 'active';
-    callSqlite('toggle_form_status', { id });
+    await callSqlite('toggle_form_status', { id });
     return item.status;
   }
   return 'closed';
 };
 
-export const deleteFeedbackForm = (id: string) => {
+export const deleteFeedbackForm = async (id: string): Promise<boolean> => {
   clientStore.forms = clientStore.forms.filter((f) => f.id !== id);
-  callSqlite('delete_form', { id });
+  clientStore.responses = clientStore.responses.filter((r) => r.formId !== id);
+  const res = await callSqlite('delete_form', { id });
+  return res?.success ?? true;
 };
 
 // ---------------------------------------------------------------------------
@@ -418,9 +436,9 @@ export const getStudentResponse = (
   );
 };
 
-export const submitFeedbackResponse = (
+export const submitFeedbackResponse = async (
   response: Omit<FeedbackResponse, 'id' | 'submittedAt'>
-): { success: boolean; message: string; responseId?: string } => {
+): Promise<{ success: boolean; message: string; responseId?: string }> => {
   const cleanStudentId = response.studentId.trim().toUpperCase();
   if (hasStudentSubmitted(response.formId, cleanStudentId, response.teacherId)) {
     return {
@@ -437,7 +455,10 @@ export const submitFeedbackResponse = (
   };
 
   clientStore.responses.unshift(newResponse);
-  callSqlite('submit_response', newResponse);
+  const serverRes = await callSqlite('submit_response', newResponse);
+  if (serverRes && serverRes.success === false) {
+    return serverRes;
+  }
 
   return {
     success: true,
@@ -452,22 +473,24 @@ export const submitFeedbackResponse = (
 
 export const getFormTemplates = (): FormTemplate[] => clientStore.templates || [];
 
-export const saveFormTemplate = (template: FormTemplate) => {
+export const saveFormTemplate = async (template: FormTemplate): Promise<boolean> => {
   const index = clientStore.templates.findIndex((t) => t.id === template.id);
   if (index >= 0) {
     clientStore.templates[index] = template;
   } else {
     clientStore.templates.unshift(template);
   }
-  callSqlite('save_template', template);
+  const res = await callSqlite('save_template', template);
+  return res?.success ?? true;
 };
 
-export const deleteFormTemplate = (id: string) => {
+export const deleteFormTemplate = async (id: string): Promise<boolean> => {
   clientStore.templates = clientStore.templates.filter((t) => t.id !== id);
-  callSqlite('delete_template', { id });
+  const res = await callSqlite('delete_template', { id });
+  return res?.success ?? true;
 };
 
-export const clearAllData = () => {
+export const clearAllData = async (): Promise<boolean> => {
   clientStore = {
     classes: [],
     batches: [],
@@ -477,5 +500,6 @@ export const clearAllData = () => {
     responses: [],
     templates: [],
   };
-  callSqlite('clear_all_data', {});
+  const res = await callSqlite('clear_all_data', {});
+  return res?.success ?? true;
 };

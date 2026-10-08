@@ -48,7 +48,7 @@ interface StudentPortalProps {
   currentStudent: StudentItem | null;
   setCurrentStudent: (student: StudentItem | null) => void;
   targetFormId?: string | null;
-  onDataChanged: () => void;
+  onDataChanged: () => void | Promise<any>;
 }
 
 export const StudentPortal: React.FC<StudentPortalProps> = ({
@@ -297,7 +297,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
       const scorePercentage =
         maxPossibleScore > 0 ? Number(((totalScore / maxPossibleScore) * 100).toFixed(1)) : 0;
 
-      const res = submitFeedbackResponse({
+      const res = await submitFeedbackResponse({
         formId: activeForm.id,
         classId: selectedClassId,
         batchId: selectedBatchId || 'all',
@@ -345,7 +345,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
           setSelectedTeacherId(nextPending.id);
         }
 
-        onDataChanged();
+        await onDataChanged();
       } else {
         toastError(res.message);
       }

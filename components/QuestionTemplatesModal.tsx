@@ -25,7 +25,7 @@ interface QuestionTemplatesModalProps {
   onClose: () => void;
   templates: FormTemplate[];
   onUseTemplateInForm: (template: FormTemplate) => void;
-  onDataChanged: () => void;
+  onDataChanged: () => void | Promise<any>;
 }
 
 export const QuestionTemplatesModal: React.FC<QuestionTemplatesModalProps> = ({
@@ -177,7 +177,7 @@ export const QuestionTemplatesModal: React.FC<QuestionTemplatesModalProps> = ({
   };
 
   // Save template
-  const handleSaveTemplate = (e: React.FormEvent) => {
+  const handleSaveTemplate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!templateName.trim()) {
       toastError('Please enter a template name');
@@ -222,7 +222,7 @@ export const QuestionTemplatesModal: React.FC<QuestionTemplatesModalProps> = ({
       createdAt: new Date().toISOString(),
     };
 
-    saveFormTemplate(newTemplate);
+    await saveFormTemplate(newTemplate);
     toastSuccess(
       editingTemplateId
         ? `Template "${newTemplate.name}" updated!`
@@ -230,7 +230,7 @@ export const QuestionTemplatesModal: React.FC<QuestionTemplatesModalProps> = ({
     );
     setIsBuilderOpen(false);
     setEditingTemplateId(null);
-    onDataChanged();
+    await onDataChanged();
   };
 
   // Delete template
@@ -244,9 +244,9 @@ export const QuestionTemplatesModal: React.FC<QuestionTemplatesModalProps> = ({
     });
 
     if (confirmed) {
-      deleteFormTemplate(template.id);
+      await deleteFormTemplate(template.id);
       toastSuccess(`Template deleted`);
-      onDataChanged();
+      await onDataChanged();
     }
   };
 

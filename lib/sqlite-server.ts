@@ -217,18 +217,35 @@ function initSchema(db: Database): void {
       questions TEXT NOT NULL,
       createdAt TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS system_settings (
+      setting_key TEXT PRIMARY KEY,
+      setting_value TEXT,
+      updatedAt TEXT
+    );
   `);
 
   try {
-    const tmplCount = queryObjects<{ c: number }>(db, 'SELECT count(*) as c FROM form_templates');
-    if (!tmplCount || tmplCount[0]?.c === 0) {
-      for (const tmpl of DEFAULT_FORM_TEMPLATES) {
-        db.run(
-          `INSERT OR IGNORE INTO form_templates (id, name, description, questions, createdAt)
-           VALUES (?, ?, ?, ?, ?)`,
-          [tmpl.id, tmpl.name, tmpl.description || '', JSON.stringify(tmpl.questions), tmpl.createdAt]
-        );
+    const seedCheck = queryObjects<{ setting_value: string }>(
+      db,
+      "SELECT setting_value FROM system_settings WHERE setting_key = 'initial_templates_seeded'"
+    );
+    if (!seedCheck || seedCheck.length === 0) {
+      const tmplCount = queryObjects<{ c: number }>(db, 'SELECT count(*) as c FROM form_templates');
+      if (!tmplCount || tmplCount[0]?.c === 0) {
+        for (const tmpl of DEFAULT_FORM_TEMPLATES) {
+          db.run(
+            `INSERT OR IGNORE INTO form_templates (id, name, description, questions, createdAt)
+             VALUES (?, ?, ?, ?, ?)`,
+            [tmpl.id, tmpl.name, tmpl.description || '', JSON.stringify(tmpl.questions), tmpl.createdAt]
+          );
+        }
       }
+      db.run(
+        `INSERT OR REPLACE INTO system_settings (setting_key, setting_value, updatedAt)
+         VALUES ('initial_templates_seeded', '1', ?);`,
+        [new Date().toISOString()]
+      );
     }
   } catch {}
 

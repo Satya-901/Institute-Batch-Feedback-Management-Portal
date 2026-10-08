@@ -28,7 +28,7 @@ interface ClassesBatchesTabProps {
   batches: BatchItem[];
   teachers: TeacherItem[];
   students: StudentItem[];
-  onDataChanged: () => void;
+  onDataChanged: () => void | Promise<any>;
   onOpenCreateFormForBatch: (batchId: string) => void;
 }
 
@@ -69,7 +69,7 @@ export const ClassesBatchesTab: React.FC<ClassesBatchesTabProps> = ({
     setShowClassModal(true);
   };
 
-  const handleSaveClass = (e: React.FormEvent) => {
+  const handleSaveClass = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!className.trim() || !classCode.trim()) {
       toastError('Please specify class name and code');
@@ -86,10 +86,10 @@ export const ClassesBatchesTab: React.FC<ClassesBatchesTabProps> = ({
       createdAt: new Date().toISOString(),
     };
 
-    saveClass(newClass);
+    await saveClass(newClass);
     toastSuccess(`Class "${newClass.name}" added successfully`);
     setShowClassModal(false);
-    onDataChanged();
+    await onDataChanged();
   };
 
   const handleDeleteClass = async (cls: ClassItem) => {
@@ -105,9 +105,9 @@ export const ClassesBatchesTab: React.FC<ClassesBatchesTabProps> = ({
     });
 
     if (confirmed) {
-      deleteClass(cls.id);
+      await deleteClass(cls.id);
       toastSuccess(`Class "${cls.name}" deleted`);
-      onDataChanged();
+      await onDataChanged();
     }
   };
 
@@ -121,7 +121,7 @@ export const ClassesBatchesTab: React.FC<ClassesBatchesTabProps> = ({
     setShowBatchModal(true);
   };
 
-  const handleSaveBatch = (e: React.FormEvent) => {
+  const handleSaveBatch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!batchName.trim()) {
       toastError('Please enter a batch name');
@@ -144,10 +144,10 @@ export const ClassesBatchesTab: React.FC<ClassesBatchesTabProps> = ({
       createdAt: new Date().toISOString(),
     };
 
-    saveBatch(newBatch);
+    await saveBatch(newBatch);
     toastSuccess(`Batch "${newBatch.name}" created successfully`);
     setShowBatchModal(false);
-    onDataChanged();
+    await onDataChanged();
   };
 
   const handleDeleteBatch = async (batch: BatchItem) => {
@@ -163,9 +163,9 @@ export const ClassesBatchesTab: React.FC<ClassesBatchesTabProps> = ({
     });
 
     if (confirmed) {
-      deleteBatch(batch.id);
+      await deleteBatch(batch.id);
       toastSuccess(`Batch "${batch.name}" deleted`);
-      onDataChanged();
+      await onDataChanged();
     }
   };
 

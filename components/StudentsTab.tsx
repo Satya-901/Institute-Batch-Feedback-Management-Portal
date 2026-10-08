@@ -25,7 +25,7 @@ interface StudentsTabProps {
   students: StudentItem[];
   batches: BatchItem[];
   classes: ClassItem[];
-  onDataChanged: () => void;
+  onDataChanged: () => void | Promise<any>;
   onLoginAsStudent: (student: StudentItem) => void;
 }
 
@@ -144,7 +144,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
 
   const validBulkCount = parsedBulkRows.filter((r) => r.isValid).length;
 
-  const handleSaveSingleStudent = (e: React.FormEvent) => {
+  const handleSaveSingleStudent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!singleId.trim() || !singleName.trim() || !singleDob.trim()) {
       toastError('All fields (Student ID, Name, Date of Birth) are required');
@@ -170,10 +170,10 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
       createdAt: new Date().toISOString(),
     };
 
-    saveStudent(newStudent);
+    await saveStudent(newStudent);
     toastSuccess(`Student "${newStudent.name}" enrolled successfully`);
     setShowSingleModal(false);
-    onDataChanged();
+    await onDataChanged();
   };
 
   const handleExecuteBulkImport = async () => {
@@ -208,14 +208,14 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
         createdAt: new Date().toISOString(),
       }));
 
-      const result = bulkAddStudents(newItems);
+      const result = await bulkAddStudents(newItems);
       await alertSuccess(
         'Bulk Import Completed',
         `Successfully registered ${result.addedCount} students into ${targetBatch?.name}. Initial passwords have been configured to their respective Date of Birth.`
       );
       toastSuccess(`${result.addedCount} students enrolled`);
       setShowBulkModal(false);
-      onDataChanged();
+      await onDataChanged();
     }
   };
 
@@ -229,9 +229,9 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
     });
 
     if (confirmed) {
-      deleteStudent(student.id);
+      await deleteStudent(student.id);
       toastSuccess(`Student record removed`);
-      onDataChanged();
+      await onDataChanged();
     }
   };
 

@@ -198,17 +198,28 @@ export async function initMysqlSchemaAndSeed(): Promise<boolean> {
           ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
         `);
 
-        // Seed default templates in MySQL if table is empty
+        // Seed default templates in MySQL only once (never re-seed if user deleted them)
         try {
-          const [tmplRows]: any = await conn.query('SELECT count(*) as c FROM form_templates');
-          if (!tmplRows || tmplRows[0]?.c === 0) {
-            for (const tmpl of DEFAULT_FORM_TEMPLATES) {
-              await conn.query(
-                `INSERT IGNORE INTO form_templates (id, name, description, questions, createdAt)
-                 VALUES (?, ?, ?, ?, ?)`,
-                [tmpl.id, tmpl.name, tmpl.description || '', JSON.stringify(tmpl.questions), tmpl.createdAt]
-              );
+          const [tmplSeedRows]: any = await conn.query(
+            `SELECT setting_value FROM system_settings WHERE setting_key = 'initial_templates_seeded'`
+          );
+          if (!tmplSeedRows || tmplSeedRows.length === 0) {
+            const [tmplRows]: any = await conn.query('SELECT count(*) as c FROM form_templates');
+            if (!tmplRows || tmplRows[0]?.c === 0) {
+              for (const tmpl of DEFAULT_FORM_TEMPLATES) {
+                await conn.query(
+                  `INSERT IGNORE INTO form_templates (id, name, description, questions, createdAt)
+                   VALUES (?, ?, ?, ?, ?)`,
+                  [tmpl.id, tmpl.name, tmpl.description || '', JSON.stringify(tmpl.questions), tmpl.createdAt]
+                );
+              }
             }
+            await conn.query(
+              `INSERT INTO system_settings (setting_key, setting_value, updatedAt)
+               VALUES ('initial_templates_seeded', '1', ?)
+               ON DUPLICATE KEY UPDATE setting_value = '1', updatedAt = ?`,
+              [new Date().toISOString(), new Date().toISOString()]
+            );
           }
         } catch (tErr) {
           console.warn('[MySQL] Failed to seed default form templates:', tErr);

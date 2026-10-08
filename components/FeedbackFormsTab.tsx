@@ -40,7 +40,6 @@ import {
   getFormTemplates,
   saveFormTemplate,
 } from '@/lib/storage';
-import { DEFAULT_FORM_TEMPLATES } from '@/lib/default-templates';
 import { toastSuccess, toastError, confirmAction } from '@/lib/notification';
 import { QRCodeModal } from '@/components/QRCodeModal';
 import { QuestionTemplatesModal } from '@/components/QuestionTemplatesModal';
@@ -53,7 +52,7 @@ interface FeedbackFormsTabProps {
   students: StudentItem[];
   responses: FeedbackResponse[];
   templates?: FormTemplate[];
-  onDataChanged: () => void;
+  onDataChanged: () => void | Promise<any>;
   onOpenTestStudentView: (formId: string) => void;
   initialBatchIdToCreate?: string | null;
   onClearInitialBatchId?: () => void;
@@ -80,12 +79,9 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
   const [saveAsTemplateName, setSaveAsTemplateName] = useState<string>('');
   const [saveAsTemplateDesc, setSaveAsTemplateDesc] = useState<string>('');
 
-  // Templates list (fallback to storage and defaults)
+  // Templates list (strictly honors database state - never re-injects deleted defaults)
   const allTemplates = useMemo(() => {
-    if (templates && templates.length > 0) return templates;
-    const stored = getFormTemplates();
-    if (stored && stored.length > 0) return stored;
-    return DEFAULT_FORM_TEMPLATES;
+    return templates || [];
   }, [templates]);
 
   // QR Code Modal State
@@ -273,7 +269,7 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
     toastSuccess(`Imported ${clonedQuestions.length} questions from "${tmpl.name}"!`);
   };
 
-  const handleConfirmSaveAsTemplate = (e: React.FormEvent) => {
+  const handleConfirmSaveAsTemplate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!saveAsTemplateName.trim()) {
       toastError('Please enter a template name');
@@ -293,12 +289,12 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
       })),
       createdAt: new Date().toISOString(),
     };
-    saveFormTemplate(newTmpl);
+    await saveFormTemplate(newTmpl);
     toastSuccess(`Saved as template: "${newTmpl.name}"!`);
     setShowSaveAsTemplateModal(false);
     setSaveAsTemplateName('');
     setSaveAsTemplateDesc('');
-    onDataChanged();
+    await onDataChanged();
   };
 
   const handleDeleteQuestion = (id: string) => {
@@ -338,7 +334,7 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
     );
   };
 
-  const handleSaveForm = (e: React.FormEvent) => {
+  const handleSaveForm = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedClassId) {
       toastError('Please select a target class');
@@ -392,20 +388,20 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
       createdAt: new Date().toISOString(),
     };
 
-    saveFeedbackForm(newForm);
+    await saveFeedbackForm(newForm);
     toastSuccess(`Feedback form created! (Share Code: ${newForm.shareableCode})`);
     handleCloseModal();
-    onDataChanged();
+    await onDataChanged();
   };
 
-  const handleToggleStatus = (form: FeedbackForm) => {
-    const nextStatus = toggleFeedbackFormStatus(form.id);
+  const handleToggleStatus = async (form: FeedbackForm) => {
+    const nextStatus = await toggleFeedbackFormStatus(form.id);
     if (nextStatus === 'active') {
       toastSuccess(`Form is now ACTIVE`);
     } else {
       toastSuccess(`Form is now CLOSED`);
     }
-    onDataChanged();
+    await onDataChanged();
   };
 
   const handleDeleteForm = async (form: FeedbackForm) => {
@@ -422,9 +418,9 @@ export const FeedbackFormsTab: React.FC<FeedbackFormsTabProps> = ({
     });
 
     if (confirmed) {
-      deleteFeedbackForm(form.id);
+      await deleteFeedbackForm(form.id);
       toastSuccess('Feedback form deleted');
-      onDataChanged();
+      await onDataChanged();
     }
   };
 

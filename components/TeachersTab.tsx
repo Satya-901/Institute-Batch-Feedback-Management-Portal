@@ -36,7 +36,7 @@ interface TeachersTabProps {
   classes: ClassItem[];
   forms: FeedbackForm[];
   responses: FeedbackResponse[];
-  onDataChanged: () => void;
+  onDataChanged: () => void | Promise<any>;
 }
 
 export const TeachersTab: React.FC<TeachersTabProps> = ({
@@ -94,7 +94,7 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
     }
   };
 
-  const handleSaveTeacher = (e: React.FormEvent) => {
+  const handleSaveTeacher = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
       toastError('Please enter faculty name');
@@ -118,10 +118,10 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
       createdAt: new Date().toISOString(),
     };
 
-    saveTeacher(teacherData);
+    await saveTeacher(teacherData);
     toastSuccess(editingTeacherId ? 'Faculty updated' : 'Faculty registered');
     setShowModal(false);
-    onDataChanged();
+    await onDataChanged();
   };
 
   const handleDeleteTeacher = async (teacher: TeacherItem) => {
@@ -138,9 +138,9 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
     });
 
     if (confirmed) {
-      deleteTeacher(teacher.id);
+      await deleteTeacher(teacher.id);
       toastSuccess('Faculty member deleted');
-      onDataChanged();
+      await onDataChanged();
     }
   };
 
@@ -353,7 +353,7 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
     reader.readAsText(file);
   };
 
-  const handleCommitBulkTeachers = () => {
+  const handleCommitBulkTeachers = async () => {
     if (validBulkRows.length === 0) {
       toastError('No valid faculty records found to import');
       return;
@@ -375,7 +375,7 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
       createdAt: new Date().toISOString(),
     }));
 
-    const result = bulkAddTeachers(teachersToAdd);
+    const result = await bulkAddTeachers(teachersToAdd);
     setIsProcessingBulk(false);
     toastSuccess(
       `Successfully imported ${result.addedCount} faculty members! (${result.duplicateCount} duplicates skipped)`
@@ -384,7 +384,7 @@ export const TeachersTab: React.FC<TeachersTabProps> = ({
     setBulkRawText('');
     setBulkAssignBatchCodes('');
     setShowBulkModal(false);
-    onDataChanged();
+    await onDataChanged();
   };
 
   return (
